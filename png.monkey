@@ -780,6 +780,9 @@ Class PNGDecodeState Implements PNGEntity Final
 			
 			Return EncodeInt(name[0], name[1], name[2], name[3])
 		End
+	Private
+		' Global variable(s):
+		Global __inf_ctx:= New InfContext()
 	Protected
 		' Fields:
 		
@@ -795,7 +798,14 @@ Class PNGDecodeState Implements PNGEntity Final
 		Field end_found:Bool
 		
 		' Output:
-		'Field output:Stream
+		
+		' Inflation functionality:
+		
+		' This stores a reference to the shared inflation-session used to decode IDAT blocks.
+		Field inflate_session:InfSession
+		
+		' This stores a reference to a global/shared inflation context.
+		Field inflate_context:= __inf_ctx
 End
 
 ' The contents of an IHDR chunk; PNG header information.
