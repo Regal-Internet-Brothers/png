@@ -710,7 +710,7 @@ Class PNG Implements PNGEntity
 		End
 End
 
-Class PNGDecodeState Final
+Class PNGDecodeState Implements PNGEntity Final
 	Public
 		' Constructor(s):
 		Method New()
