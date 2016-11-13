@@ -47,7 +47,19 @@ Class ImageView
 			Local address:= IndexToAddress(index)
 			Local channel:= IndexToChannel(index)
 			
-			Return ((GetRaw(address, DepthInBytes) Shr (channel * BitsPerChannel)) & BitMask)
+			Local depth_in_bytes:= DepthInBytes
+			Local bytes_per_channel:= BytesPerChannel
+			Local channel_stride:= BitsPerChannel ' bytes_per_channel * 8
+			
+			If (bytes_per_channel >= SizeOf_Integer) Then ' =
+				address += (channel * bytes_per_channel) ' SizeOf_Integer
+				
+				channel_stride = 0
+			Endif
+			
+			Local value_size:= Min(depth_in_bytes, bytes_per_channel)
+			
+			Return ((GetRaw(address, value_size) Shr (channel * channel_stride)) & BitMask)
 		End
 		
 		Method Set:Void(index:Int, value:Int)
@@ -64,11 +76,12 @@ Class ImageView
 				channel_stride = 0
 			Endif
 			
-			Local current_value:= GetRaw(address, Min(depth_in_bytes, bytes_per_channel))
+			Local value_size:= Min(depth_in_bytes, bytes_per_channel)
+			Local current_value:= GetRaw(address, value_size)
 			
 			Local out_value:= ((value & BitMask) Shl (channel * channel_stride))
 			
-			SetRaw(address, depth_in_bytes, (current_value | out_value))
+			SetRaw(address, value_size, (current_value | out_value))
 		End
 		
 		' This reads a raw value of size 'value_size' bytes from 'address'.
