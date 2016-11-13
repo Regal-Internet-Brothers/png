@@ -51,16 +51,22 @@ Class ImageView
 		End
 		
 		Method Set:Void(index:Int, value:Int)
-			'DebugStop()
-			
 			Local address:= IndexToAddress(index)
 			Local channel:= IndexToChannel(index)
 			
 			Local depth_in_bytes:= DepthInBytes
+			Local bytes_per_channel:= BytesPerChannel
+			Local channel_stride:= BitsPerChannel ' bytes_per_channel * 8
 			
-			Local current_value:= GetRaw(address, depth_in_bytes)
+			If (bytes_per_channel >= SizeOf_Integer) Then ' =
+				address += (channel * bytes_per_channel) ' SizeOf_Integer
+				
+				channel_stride = 0
+			Endif
 			
-			Local out_value:= ((value & BitMask) Shl (channel * BitsPerChannel))
+			Local current_value:= GetRaw(address, Min(depth_in_bytes, bytes_per_channel))
+			
+			Local out_value:= ((value & BitMask) Shl (channel * channel_stride))
 			
 			SetRaw(address, depth_in_bytes, (current_value | out_value))
 		End
