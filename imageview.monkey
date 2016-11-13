@@ -57,7 +57,13 @@ Class ImageView
 				channel_stride = 0
 			Endif
 			
-			Local value_size:= Min(depth_in_bytes, bytes_per_channel)
+			Local value_size:Int
+			
+			If (depth_in_bytes >= 4) Then
+				value_size = bytes_per_channel
+			Else
+				value_size = depth_in_bytes
+			Endif
 			
 			Return ((GetRaw(address, value_size) Shr (channel * channel_stride)) & BitMask)
 		End
@@ -76,7 +82,14 @@ Class ImageView
 				channel_stride = 0
 			Endif
 			
-			Local value_size:= Min(depth_in_bytes, bytes_per_channel)
+			Local value_size:Int
+			
+			If (depth_in_bytes >= 4) Then
+				value_size = bytes_per_channel
+			Else
+				value_size = depth_in_bytes
+			Endif
+			
 			Local current_value:= GetRaw(address, value_size)
 			
 			Local out_value:= ((value & BitMask) Shl (channel * channel_stride))
@@ -99,6 +112,8 @@ Class ImageView
 					value = (data.PeekByte(address + SizeOf_Short) & $FF)
 					value Shl= 16
 					value |= (data.PeekShort(address) & $FFFF)
+					
+					Return value
 				Case 4
 					Return data.PeekInt(address)
 			End Select
