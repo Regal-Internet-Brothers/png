@@ -36,10 +36,11 @@ Class ImageView
 			as that would require integer types larger than 32-bit.
 		#End
 		
-		Method New(data:DataBuffer, channels:Int, depth:Int)
+		Method New(data:DataBuffer, channels:Int, depth:Int, offset:Int=0)
 			Self.data = data
 			Self.channels = channels
 			Self.depth = depth
+			Self.offset = offset
 		End
 		
 		' Methods:
@@ -100,22 +101,24 @@ Class ImageView
 		' This reads a raw value of size 'value_size' bytes from 'address'.
 		' This is used internally to handle memory-mapping.
 		Method GetRaw:Int(address:Int, value_size:Int)
+			Local offset_address:= (address + offset)
+			
 			Select (value_size)
 				Case 1
-					Return data.PeekByte(address)
+					Return data.PeekByte(offset_address)
 				Case 2
-					Return data.PeekShort(address)
+					Return data.PeekShort(offset_address)
 				Case 3
 					Local value:Int
 					
 					' Read 3 bytes into a 32-bit integer:
-					value = (data.PeekByte(address + SizeOf_Short) & $FF)
+					value = (data.PeekByte(offset_address + SizeOf_Short) & $FF)
 					value Shl= 16
-					value |= (data.PeekShort(address) & $FFFF)
+					value |= (data.PeekShort(offset_address) & $FFFF)
 					
 					Return value
 				Case 4
-					Return data.PeekInt(address)
+					Return data.PeekInt(offset_address)
 			End Select
 			
 			Return 0
@@ -124,19 +127,21 @@ Class ImageView
 		' This writes a raw value of size 'value_size' bytes to 'address'.
 		' This is used internally to handle memory-mapping.
 		Method SetRaw:Void(address:Int, value_size:Int, value:Int)
+			Local offset_address:= (address + offset)
+			
 			Select (value_size)
 				Case 1
-					data.PokeByte(address, value)
+					data.PokeByte(offset_address, value)
 				Case 2
-					data.PokeShort(address, value)
+					data.PokeShort(offset_address, value)
 				Case 3
 					Local a:= (value & $FFFF)
 					Local b:= ((value Shr 16) & $FF)
 					
-					data.PokeShort(address, a)
-					data.PokeByte((address + SizeOf_Short), b)
+					data.PokeShort(offset_address, a)
+					data.PokeByte((offset_address + SizeOf_Short), b)
 				Case 4
-					data.PokeInt(address, value)
+					data.PokeInt(offset_address, value)
 			End Select
 		End
 		
@@ -185,6 +190,10 @@ Class ImageView
 			Return Self.depth
 		End
 		
+		Method Offset:Int() Property
+			Return Self.offset
+		End
+		
 		' This specifies the minimum number of bytes required to store 'Depth'.
 		Method DepthInBytes:Int() Property
 			Return BitDepthInBytes(Depth)
@@ -216,4 +225,5 @@ Class ImageView
 		
 		Field channels:Int
 		Field depth:Int
+		Field offset:Int
 End
