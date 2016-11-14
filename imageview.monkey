@@ -199,7 +199,7 @@ Class ImageView
 		' Modifying this property does not yield changes to
 		' the contents of 'Data', only its representation.
 		Method Offset:Void(value:Int) Property
-			Self.offset = value
+			Self.offset = Max(value, 0)
 		End
 		
 		' This specifies the minimum number of bytes required to store 'Depth'.

@@ -53,10 +53,6 @@ Class PNG Implements PNGEntity
 		' An object containing the contents of an IHDR chunk.
 		Field header:= New PNGHeader()
 		
-		' An array of integers representing RGB(A) colors loaded from
-		' a required PLTE chunk when using 'COLOR_TYPE_INDEXED'.
-		Field palette_data:Int[] ' UInt[]
-		
 		' The final RGBA color-data used to represent a displayable image.
 		Field image_data:DataBuffer
 	Public
@@ -486,7 +482,7 @@ Class PNG Implements PNGEntity
 				' Get the filtering type from the line-buffer.
 				Local filter_type:= line_buffer.PeekByte(0)
 				
-				Print("filter_type["+current_height+"]: " + filter_type)
+				'Print("filter_type["+current_height+"]: " + filter_type)
 				
 				Local line_view:= state.line_view
 				Local color_channels:= line_view.Channels
@@ -519,7 +515,7 @@ Class PNG Implements PNGEntity
 						Case COLOR_TYPE_INDEXED
 							Local color_index:= line_view.Get(channel_position)
 							
-							image_buffer.PokeInt(image_position, palette_data[color_index])
+							image_buffer.PokeInt(image_position, state.palette_data[color_index])
 						Case COLOR_TYPE_GRAYSCALE_ALPHA
 						Case COLOR_TYPE_TRUECOLOR_ALPHA
 							DebugStop()
@@ -566,19 +562,6 @@ Class PNG Implements PNGEntity
 			Endif
 			
 			Return True
-		End
-		
-		Method AllocatePaletteBuffer:Int[](state:PNGDecodeState, chunk_length:Int, advanced_errors:Bool=False) ' True
-			' Ensure this chunk's length is divisible by 3 (RGB):
-			If ((chunk_length Mod 3) <> 0) Then
-				If (advanced_errors) Then
-					Throw New PNGDecodeError(Self, state, "PLTE chunks must have lengths divisible by 3 in order to hold every required color channel: Internal Error")
-				Else
-					Return []
-				Endif
-			Endif
-			
-			Return New Int[chunk_length / 3]
 		End
 		
 		#Rem
@@ -643,28 +626,27 @@ Class PNG Implements PNGEntity
 					' Supported chunks:
 					Select (chunk_type)
 						Case "PLTE" ' Palette data.
-							#Rem
-								If (palette_data.Length > 0) Then
-									Return CHUNK_RESPONSE_SKIP
-								Endif
-							#End
-							
 							' State safety:
 							If (state.palette_found) Then
-								Throw New PNGDecodeError(Self, state, "Only one PLTE chunk is allowed in a PNG data-stream.")
+								If (Not state.custom_palette) Then
+									Throw New PNGDecodeError(Self, state, "Only one PLTE chunk is allowed in a PNG data-stream.")
+								Else
+									Return CHUNK_RESPONSE_SKIP
+								Endif
 							Endif
 							
 							If (state.image_data_found) Then
 								Throw New PNGDecodeError(Self, state, "PLTE chunk detected after IDAT chunk: Internal Error")
 							Endif
 							
-							palette_data = AllocatePaletteBuffer(state, chunk_length, advanced_errors)
+							' Initialize the 'state' object's internal palette buffer.
+							' Performing this action automatically assigns 'palette_found' appropriately.
+							If (Not state.InitializePaletteBuffer(chunk_length) And advanced_errors)
+								Throw New PNGDecodeError(Self, state, "PLTE chunks must have lengths divisible by 3 in order to hold every required color channel: Internal Error")
+							Endif
 							
-							' Load and check the legitimacy of the palette.
-							PLTE(input, state, palette_data, advanced_errors)
-							
-							' Update the state.
-							state.palette_found = (palette_data.Length > 0)
+							' Load and check the legitimacy of the described palette data.
+							PLTE(input, state, state.palette_data, advanced_errors)
 						Case "IDAT" ' Image data; multiple allowed.
 							' State safety:
 							If (state.image_data_complete) Then
@@ -825,13 +807,6 @@ Class PNG Implements PNGEntity
 		' will supply a default-initialized object.
 		Method Header:PNGHeader() Property
 			Return Self.header
-		End
-		
-		' This represents the current palette data.
-		' If palette data has yet to be provided,
-		' this will supply an empty array.
-		Method Palette:Int[]() Property ' UInt[]
-			Return Self.palette_data
 		End
 		
 		#Rem

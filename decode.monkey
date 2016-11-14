@@ -88,6 +88,38 @@ Class PNGDecodeState Implements PNGEntity Final
 			#End
 		End
 		
+		Method InitializePaletteBuffer:Bool(chunk_length:Int)
+			' Ensure this chunk's length is divisible by 3 (RGB):
+			If ((chunk_length Mod 3) <> 0) Then
+				Return False
+			Endif
+			
+			Self.Palette(New Int[chunk_length / 3], False)
+			
+			' Return the default response.
+			Return True ' Self.palette_found
+		End
+		
+		' This applies the contents of 'data' to the internal palette buffer.
+		' NOTE: If palettes aren't used in the decoding process, this will fail.
+		' The return-value of this method indicates if the desired operation took place.
+		Method PatchPalette:Bool(data:Int[], count:Int, data_offset:Int=0, internal_offset:Int=0)
+			If ((internal_offset+count) > Self.palette_data.Length Or (data_offset + count) > data.Length) Then
+				Return False
+			Endif
+			
+			For Local index:= 0 Until count
+				Self.palette_data[(internal_offset + index)] = data[(data_offset + index)]
+			Next
+			
+			' Return the default response.
+			Return True
+		End
+		
+		Method PatchPalette:Bool(data:Int[])
+			Return PatchPalette(data, data.Length)
+		End
+		
 		' Properties:
 		
 		' This specifies if the IHDR chunk has been loaded.
@@ -140,6 +172,35 @@ Class PNGDecodeState Implements PNGEntity Final
 			
 			Return EncodeInt(name[0], name[1], name[2], name[3])
 		End
+		
+		' This represents the current palette data.
+		' If palette data has yet to be provided,
+		' this will supply an empty array.
+		Method Palette:Int[]() Property ' UInt[]
+			Return Self.palette_data
+		End
+		
+		' This is used to manually assign/override the internal palette buffer.
+		' The palette data specified must be at least as large as the current palette buffer.
+		' For variable palette sizes, you must patch the existing buffer using 'PatchPalette'.
+		Method Palette:Bool(data:Int[], __custom:Bool=True) Property
+			' Empty palettes are automatically invalid:
+			If (data.Length = 0) Then
+				Return False
+			Endif
+			
+			#If REGAL_PNG_SAFE
+				If (data.Length < Self.palette_data.Length) Then
+					Return False
+				Endif
+			#End
+			
+			Self.palette_data = data
+			Self.palette_found = (data.Length > 0) ' (Self.palette_data.Length > 0)
+			Self.custom_palette = __custom
+			
+			Return True
+		End
 	Private
 		' Global variable(s):
 		Global __inf_ctx:= New InfContext()
@@ -156,6 +217,14 @@ Class PNGDecodeState Implements PNGEntity Final
 		Field image_data_complete:Bool
 		Field palette_found:Bool
 		Field end_found:Bool
+		
+		Field custom_palette:Bool
+		
+		' Image-data:
+		
+		' An array of integers representing RGB(A) colors loaded from
+		' a required PLTE chunk when using 'COLOR_TYPE_INDEXED'.
+		Field palette_data:Int[] ' UInt[]
 		
 		' Output:
 		
