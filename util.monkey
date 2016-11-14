@@ -17,6 +17,13 @@ Import regal.ioutil.util
 ' Constant variable(s):
 Const PNG_CHUNK_IDENT_LENGTH:= 4
 
+' Color types:
+Const PNG_COLOR_TYPE_GRAYSCALE:= 0
+Const PNG_COLOR_TYPE_TRUECOLOR:= 2
+Const PNG_COLOR_TYPE_INDEXED:= 3
+Const PNG_COLOR_TYPE_GRAYSCALE_ALPHA:= 4
+Const PNG_COLOR_TYPE_TRUECOLOR_ALPHA:= 6
+
 ' Functions:
 
 ' This returns the number of bytes needed to hold 'bits'.

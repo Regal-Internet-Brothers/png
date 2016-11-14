@@ -2,6 +2,9 @@ Strict
 
 Public
 
+' Imports (Public):
+Import config
+
 ' Imports (Private):
 Private
 
@@ -26,8 +29,25 @@ Class PNGHeader Implements PNGEntity Final
 	End
 	
 	' Properties:
-	Method ByteDepth:Int() Property Final
+	Method ByteDepth:Int() Property
 		Return BitDepthInBytes(depth)
+	End
+	
+	Method ColorChannels:Int() Property
+		Select (color_type)
+			Case PNG_COLOR_TYPE_GRAYSCALE
+				Return 1
+			Case PNG_COLOR_TYPE_TRUECOLOR
+				Return 3
+			Case PNG_COLOR_TYPE_INDEXED
+				Return 1
+			Case PNG_COLOR_TYPE_GRAYSCALE_ALPHA
+				Return 2
+			Case PNG_COLOR_TYPE_TRUECOLOR_ALPHA
+				Return 4
+		End Select
+		
+		Return 0
 	End
 	
 	' Fields:

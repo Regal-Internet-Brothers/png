@@ -13,8 +13,13 @@ Private
 
 Import util
 Import header
+Import imageview
 
 Import regal.inflate
+
+'#If REGAL_PNG_SAFE
+Import regal.util.memory
+'#End
 
 Public
 
@@ -47,6 +52,9 @@ Class PNGDecodeState Implements PNGEntity Final
 		
 		' This initializes the internal scan-line buffer.
 		Method InitializeLineBuffer:Bool(header:PNGHeader)
+			' Constant variable(s):
+			Const FILTER_HEADER_SIZE:= 1
+			
 			#If REGAL_PNG_SAFE
 				If (Self.raw_image_line <> Null) Then
 					Return False
@@ -64,7 +72,14 @@ Class PNGDecodeState Implements PNGEntity Final
 			' Allocate a raw image buffer to store decoded output from the data-stream.
 			' The size of this buffer is the maximum number of bytes required
 			' to store a line from the data-stream described by 'header'.
-			Self.raw_image_line = New DataBuffer((header.width * header.ByteDepth) + 1)
+			Self.raw_image_line = New DataBuffer((header.width * header.ByteDepth) + FILTER_HEADER_SIZE)
+			
+			#If REGAL_PNG_SAFE Or CONFIG = "debug"
+				SetBuffer(Self.raw_image_line, 0)
+			#End
+			
+			' Create an image-view of our line-buffer.
+			Self.line_view = New ImageView(Self.raw_image_line, header.ColorChannels, header.depth, FILTER_HEADER_SIZE)
 			
 			#If REGAL_PNG_SAFE
 				Return (Self.raw_image_line <> Null) ' And (Self.raw_image_line.Length > 0)
@@ -145,7 +160,11 @@ Class PNGDecodeState Implements PNGEntity Final
 		' Output:
 		
 		' A buffer containing the current line-data last taken from a decompression stream.
+		' NOTE: This buffer also contains the filter-type header before the image-data.
 		Field raw_image_line:DataBuffer
+		
+		' A view of 'raw_image_line' offset by the filter-type header.
+		Field line_view:ImageView
 		
 		' Inflation functionality:
 		

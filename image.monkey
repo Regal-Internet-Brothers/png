@@ -86,11 +86,11 @@ Class PNG Implements PNGEntity
 		Const CHUNK_RESPONSE_EXIT:= 2
 		
 		' Color types:
-		Const COLOR_TYPE_GRAYSCALE:= 0
-		Const COLOR_TYPE_TRUECOLOR:= 2
-		Const COLOR_TYPE_INDEXED:= 3
-		Const COLOR_TYPE_GRAYSCALE_ALPHA:= 4
-		Const COLOR_TYPE_TRUECOLOR_ALPHA:= 6
+		Const COLOR_TYPE_GRAYSCALE:= PNG_COLOR_TYPE_GRAYSCALE
+		Const COLOR_TYPE_TRUECOLOR:= PNG_COLOR_TYPE_TRUECOLOR
+		Const COLOR_TYPE_INDEXED:= PNG_COLOR_TYPE_INDEXED
+		Const COLOR_TYPE_GRAYSCALE_ALPHA:= PNG_COLOR_TYPE_GRAYSCALE_ALPHA
+		Const COLOR_TYPE_TRUECOLOR_ALPHA:= PNG_COLOR_TYPE_TRUECOLOR_ALPHA
 		
 		Const COLOR_TYPE_GREYSCALE:= COLOR_TYPE_GRAYSCALE
 		Const COLOR_TYPE_GREYSCALE_ALPHA:= COLOR_TYPE_GRAYSCALE_ALPHA
@@ -450,7 +450,10 @@ Class PNG Implements PNGEntity
 			
 			Local inflate_response:Int
 			
-			'DebugStop()
+			Local current_height:= 0
+			
+			Local pixel_stride:= Self.PixelStride
+			Local line_buffer:= state.raw_image_line
 			
 			Repeat
 				Local line_stream:= state.inflate_session.destination
@@ -458,49 +461,98 @@ Class PNG Implements PNGEntity
 				' Ensure the inflation-stream outputs at the beginning of the line-buffer.
 				line_stream.Seek(0)
 				
+				'DebugStop()
+				
 				' Read a line from the data-stream:
-				For Local I:= 0 Until state.raw_image_line.Length
+				While (line_stream.Position < line_buffer.Length)
 					inflate_response = Inflate_Checksum(state.inflate_context, state.inflate_session, True) ' Inflate
-				Next
+					
+					' Check if we're not continuing the line:
+					If (inflate_response <> INF_OK) Then
+						Exit
+					Endif
+				Wend
 				
-				Local __line_bytes:= New Int[state.raw_image_line.Length]
+				' If we're not continuing, let the end of the function handle response-code behavior:
+				If (inflate_response <> INF_OK) Then
+					Exit
+				Endif
 				
-				state.raw_image_line.PeekBytes(0, __line_bytes, 0, __line_bytes.Length)
+				Local len:= line_buffer.Length
+				Local pos:= line_stream.Position
 				
-				Print("__line_bytes.Length: " + __line_bytes.Length)
+				'DebugStop()
 				
-				DebugStop()
+				' Get the filtering type from the line-buffer.
+				Local filter_type:= line_buffer.PeekByte(0)
 				
-				' Seek to the beginning of the line in order to read from it.
-				line_stream.Seek(0)
+				Print("filter_type["+current_height+"]: " + filter_type)
 				
-				Local filter_type:= line_stream.ReadByte()
+				Local line_view:= state.line_view
+				Local color_channels:= line_view.Channels
 				
 				' Check which filtering type was specified:
 				Select (filter_type)
 					Case FILTER_METHOD_NONE
 						' Nothing so far.
 					Case FILTER_METHOD_SUB
-						
+						' Nothing so far.
 					Case FILTER_METHOD_UP
-						
+						' Nothing so far.
 					Case FILTER_METHOD_AVERAGE
-						
+						' Nothing so far.
 					Case FILTER_METHOD_PAETH
-						
+						' Nothing so far.
 				End Select
 				
-				'image_buffer.PokeInt(...)
+				Local buffer_line_offset:= ((header.width * current_height) * pixel_stride)
 				
-				' Check if we've gracefully found the end of the chunk:
-				If (inflate_response = INF_DONE) Then
-					Exit ' Return True
-				Elseif (inflate_response <> INF_OK) Then
-					DebugStop()
+				Local image_position:= buffer_line_offset
+				Local channel_position:= 0
+				
+				'DebugStop()
+				
+				For Local x:= 0 Until header.width
+					Select (header.color_type)
+						Case COLOR_TYPE_GRAYSCALE
+						Case COLOR_TYPE_TRUECOLOR
+						Case COLOR_TYPE_INDEXED
+							Local color_index:= line_view.Get(channel_position)
+							
+							image_buffer.PokeInt(image_position, palette_data[color_index])
+						Case COLOR_TYPE_GRAYSCALE_ALPHA
+						Case COLOR_TYPE_TRUECOLOR_ALPHA
+							DebugStop()
+							
+							Local r:= line_view.Get(channel_position)
+							Local g:= line_view.Get(channel_position+1)
+							Local b:= line_view.Get(channel_position+2)
+							Local a:= line_view.Get(channel_position+3)
+					End
 					
-					Exit ' Return False
-				Endif
+					image_position += pixel_stride
+					channel_position += color_channels
+				Next
+				
+				current_height += 1
 			Until (input.Position >= chunk_end_position)
+			
+			If (advanced_errors) Then
+				' The 'INF_OK' response is only valid if the inflate data-stream is continued in another contiguous IDAT chunk.
+				' Error handling of neighbouring chunks is performed by higher level routines and should therefore be ignored at this level.
+				If (inflate_response <> INF_DONE And inflate_response <> INF_OK) Then
+					Select (inflate_response)
+						Case INF_DATA_ERROR
+							Throw New PNGDecodeError(Self, state, "A critical data-error occurred while decoding an IDAT chunk: Internal Error")
+						Case INF_CHKSUM_ERROR
+							Throw New PNGDecodeError(Self, state, "A checksum mismatch occurred while decoding an IDAT chunk: Internal Error")
+						Default
+							#If REGAL_PNG_SAFE
+								Throw New PNGDecodeError(Self, state, "An unknown error occurred while processing an IDAT chunk.")
+							#End
+					End Select
+				Endif
+			Endif
 			
 			' Make sure we inflated all of the intended data:
 			If (input.Position < chunk_end_position) Then
@@ -512,12 +564,6 @@ Class PNG Implements PNGEntity
 				
 				Return False
 			Endif
-			
-			#Rem
-				If (inflate_response <> INF_DONE) Then
-					' Stream not finished...
-				Endif
-			#End
 			
 			Return True
 		End
@@ -793,9 +839,16 @@ Class PNG Implements PNGEntity
 			Return Self.image_data
 		End
 		
+		' This specifies the internal image-buffer's color-layout.
 		' This functionality is currently unfinished.
 		Method ImageType:Int() Property
 			Return IMAGE_TYPE_RGBA
+		End
+		
+		' This specifies the stride for the current 'ImageType'.
+		' This functionality is currently unfinished.
+		Method PixelStride:Int() Property
+			Return 4
 		End
 	Private
 		' Functions:
