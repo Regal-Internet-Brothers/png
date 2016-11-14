@@ -613,6 +613,13 @@ Class PNG Implements PNGEntity
 						Throw New PNGDecodeError(Self, state, "Only one IHDR chunk is allowed in a PNG data-stream.")
 					Endif
 					
+					#If REGAL_PNG_SAFE
+						' Manually check against the constant length described by the PNG specification:
+						If (chunk_length <> 13) Then
+							Throw New PNGDecodeError(Self, state, "IHDR chunks must be exactly 13 bytes in length.")
+						Endif
+					#End
+					
 					' Update the state.
 					state.header_found = True
 					
