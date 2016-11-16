@@ -12,6 +12,7 @@ Import util
 
 Import regal.sizeof
 Import regal.byteorder
+Import regal.util.math
 
 Public
 
@@ -60,7 +61,7 @@ Class ImageView
 			
 			Local value_size:Int
 			
-			If (depth_in_bytes >= 4) Then
+			If (depth_in_bytes > 4) Then
 				value_size = bytes_per_channel
 			Else
 				value_size = depth_in_bytes
@@ -85,7 +86,7 @@ Class ImageView
 			
 			Local value_size:Int
 			
-			If (depth_in_bytes >= 4) Then
+			If (depth_in_bytes > 4) Then
 				value_size = bytes_per_channel
 			Else
 				value_size = depth_in_bytes
@@ -102,6 +103,11 @@ Class ImageView
 		' This is used internally to handle memory-mapping.
 		Method GetRaw:Int(address:Int, value_size:Int)
 			Local offset_address:= (address + offset)
+			
+			' Make sure this address is valid, and if not, return zero:
+			If (offset_address < 0) Then
+				Return 0
+			Endif
 			
 			Select (value_size)
 				Case 1
@@ -128,6 +134,11 @@ Class ImageView
 		' This is used internally to handle memory-mapping.
 		Method SetRaw:Void(address:Int, value_size:Int, value:Int)
 			Local offset_address:= (address + offset)
+			
+			' Make sure this address is valid:
+			If (offset_address < 0) Then
+				Return
+			Endif
 			
 			Select (value_size)
 				Case 1
@@ -164,13 +175,35 @@ Class ImageView
 		' to the mapped color channel and its first index.
 		' This is mostly useful for internal functionality, and may be disregarded.
 		Method IndexToAddress:Int(index:Int)
-			Return ((index / channels) * DepthInBytes)
+			Local offset:Int
+			
+			If (index = 0) Then
+				Return 0
+			Elseif (index > 0) Then
+				offset = (index / channels)
+			Else
+				offset = ((index - (channels - 1)) / channels)
+			Endif
+			
+			Return (offset * DepthInBytes)
 		End
 		
 		' This converts a global index used for contiguous data-access to
 		' a local channel index used for bitwise manipulation.
 		Method IndexToChannel:Int(index:Int)
-			Return (index Mod channels)
+			If (index = 0) Then
+				Return 0
+			Elseif (index > 0) Then
+				Return (index Mod channels)
+			Else
+				Local i:= index
+				
+				While (i < 0)
+					i += channels
+				Wend
+				
+				Return i
+			Endif
 		End
 		
 		' Properties:
