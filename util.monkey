@@ -12,10 +12,18 @@ Import brl.databuffer
 Import regal.ioutil.util
 
 ' Imports (Private):
-' Nothing so far.
+Private
+
+Import decode
+
+Import regal.inflate
+
+Public
 
 ' Constant variable(s):
+Const PNG_ZLIB_HEADER_LENGTH:= 2
 Const PNG_CHUNK_IDENT_LENGTH:= 4
+Const PNG_FILTER_HEADER_LENGTH:= 1
 
 ' Color types:
 Const PNG_COLOR_TYPE_GRAYSCALE:= 0
@@ -23,6 +31,18 @@ Const PNG_COLOR_TYPE_TRUECOLOR:= 2
 Const PNG_COLOR_TYPE_INDEXED:= 3
 Const PNG_COLOR_TYPE_GRAYSCALE_ALPHA:= 4
 Const PNG_COLOR_TYPE_TRUECOLOR_ALPHA:= 6
+
+' Compression methods:
+Const PNG_COMPRESSION_METHOD_DEFLATE:= 0
+
+' Filtering related:
+Const PNG_FILTER_TYPE_NONE:= 0
+Const PNG_FILTER_TYPE_SUB:= 1
+Const PNG_FILTER_TYPE_UP:= 2
+Const PNG_FILTER_TYPE_AVERAGE:= 3
+Const PNG_FILTER_TYPE_PAETH:= 4
+
+Const PNG_FILTER_METHOD_DEFAULT:= 0
 
 ' Functions:
 
@@ -51,4 +71,20 @@ End
 ' This allocates a 'DataBuffer' used to storing the contents of an uncompressed image.
 Function AllocateImageData:DataBuffer(width:Int, height:Int, color_depth:Int=32)
 	Return New DataBuffer(width * height * BitDepthInBytes(color_depth))
+End
+
+' This loads 'count' bytes from the inflation-stream specified using 'state' as the output.
+' The return-value is an inflate response-code defined by the 'inflate' module.
+' NOTE: This does not currently check against 'input', and instead uses 'state' for most work.
+Function InflateBytes:Int(input:Stream, state:PNGDecodeState, count:Int)
+	Local inflate_response:Int
+	
+	Local line_stream:= state.inflate_session.destination
+	Local start_position:= line_stream.Position
+	
+	Repeat
+		inflate_response = Inflate_Checksum(state.inflate_context, state.inflate_session, True)
+	Until (inflate_response <> INF_OK Or line_stream.Position >= (start_position + count))
+	
+	Return inflate_response
 End

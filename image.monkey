@@ -97,14 +97,16 @@ Class PNG Implements PNGEntity
 		'Const IMAGE_TYPE_BGRA:= 2
 		
 		' Compression methods:
-		Const COMPRESSION_METHOD_DEFLATE:= 0
+		Const COMPRESSION_METHOD_DEFLATE:= PNG_COMPRESSION_METHOD_DEFLATE
 		
-		' Filtering methods:
-		Const FILTER_METHOD_NONE:= 0
-		Const FILTER_METHOD_SUB:= 1
-		Const FILTER_METHOD_UP:= 2
-		Const FILTER_METHOD_AVERAGE:= 3
-		Const FILTER_METHOD_PAETH:= 4
+		' Filtering related:
+		Const FILTER_TYPE_NONE:= PNG_FILTER_TYPE_NONE
+		Const FILTER_TYPE_SUB:= PNG_FILTER_TYPE_SUB
+		Const FILTER_TYPE_UP:= PNG_FILTER_TYPE_UP
+		Const FILTER_TYPE_AVERAGE:= PNG_FILTER_TYPE_AVERAGE
+		Const FILTER_TYPE_PAETH:= PNG_FILTER_TYPE_PAETH
+		
+		Const FILTER_METHOD_DEFAULT:= PNG_FILTER_METHOD_DEFAULT
 		
 		' Functions:
 		
@@ -404,6 +406,11 @@ Class PNG Implements PNGEntity
 				Return False
 			Endif
 			
+			' Non-standard filtering methods are not supported.
+			If (header.filter_method <> FILTER_METHOD_DEFAULT) Then
+				Return False
+			Endif
+			
 			Return True
 		End
 		
@@ -416,16 +423,14 @@ Class PNG Implements PNGEntity
 		End
 		
 		' The return-value of this routine indicates if the chunk's contents were compatible and therefore processed.
-		Method IDAT:Bool(input:Stream, state:PNGDecodeState, header:PNGHeader, image_buffer:DataBuffer, chunk_length:Int, initialize:Bool, advanced_errors:Bool=False)
-			' Constant variable(s):
-			Const ZLIB_HEADER_SIZE:= 2
-			
+		Method IDAT:Bool(input:Stream, state:PNGDecodeState, header:PNGHeader, image_buffer:DataBuffer, chunk_length:Int, initialize:Bool, scale_colors:Bool=True, advanced_errors:Bool=False)
+			' Perform prerequisite actions:
 			If (initialize) Then
 				' Initialize the temporary line-buffer.
 				state.InitializeLineBuffer(header)
 				
 				' Initialize an inflate session.
-				state.inflate_session = New InfSession(input, New PublicDataStream(state.raw_image_line, state.raw_image_line.Length), 1)
+				state.inflate_session = New InfSession(input, New PublicDataStream(state.line_buffer, state.line_buffer.Length), 1)
 				
 				' Read the 'zlib' compression-header at the start of the chunk-data.
 				' This also performs basic setup work for 'Inflate_Checksum'.
@@ -441,96 +446,38 @@ Class PNG Implements PNGEntity
 				#End
 			Endif
 			
+			' Meta/safety related:
 			Local initial_input_position:= input.Position
-			Local chunk_end_position:= (initial_input_position + (chunk_length - ZLIB_HEADER_SIZE))
+			Local chunk_end_position:= (initial_input_position + (chunk_length - PNG_ZLIB_HEADER_LENGTH))
 			
 			Local inflate_response:Int
 			
-			Local current_height:= 0
-			
 			Local pixel_stride:= Self.PixelStride
-			Local line_buffer:= state.raw_image_line
+			
+			Local line_stream:= state.inflate_session.destination
+			Local line_view:= state.line_view
+			Local line_buffer:= line_view.Data ' line_stream.Data ' state.line_buffer
+			Local line_length:= header.LineLength
+			Local line_width:= header.width
 			
 			Repeat
-				Local line_stream:= state.inflate_session.destination
-				
 				' Ensure the inflation-stream outputs at the beginning of the line-buffer.
-				line_stream.Seek(0)
+				'SeekBegin(line_stream)
 				
-				'DebugStop()
-				
-				' Read a line from the data-stream:
-				While (line_stream.Position < line_buffer.Length)
-					inflate_response = Inflate_Checksum(state.inflate_context, state.inflate_session, True) ' Inflate
-					
-					' Check if we're not continuing the line:
-					If (inflate_response <> INF_OK) Then
-						Exit
-					Endif
-				Wend
+				inflate_response = state.DecodeLine(Self, line_view, line_length)
 				
 				' If we're not continuing, let the end of the function handle response-code behavior:
 				If (inflate_response <> INF_OK) Then
 					Exit
 				Endif
 				
-				Local len:= line_buffer.Length
-				Local pos:= line_stream.Position
+				Local filter_type:= state.filter_type
 				
-				'DebugStop()
+				state.FilterLine(line_view, line_length, filter_type, header.filter_method)
 				
-				' Get the filtering type from the line-buffer.
-				Local filter_type:= line_buffer.PeekByte(0)
+				state.TransferLine(image_buffer, line_view, line_width, pixel_stride, header.color_type, scale_colors)
 				
-				'Print("filter_type["+current_height+"]: " + filter_type)
-				
-				Local line_view:= state.line_view
-				Local color_channels:= line_view.Channels
-				
-				' Check which filtering type was specified:
-				Select (filter_type)
-					Case FILTER_METHOD_NONE
-						' Nothing so far.
-					Case FILTER_METHOD_SUB
-						' Nothing so far.
-					Case FILTER_METHOD_UP
-						' Nothing so far.
-					Case FILTER_METHOD_AVERAGE
-						' Nothing so far.
-					Case FILTER_METHOD_PAETH
-						' Nothing so far.
-				End Select
-				
-				Local buffer_line_offset:= ((header.width * current_height) * pixel_stride)
-				
-				Local image_position:= buffer_line_offset
-				Local channel_position:= 0
-				
-				'DebugStop()
-				
-				For Local x:= 0 Until header.width
-					Select (header.color_type)
-						Case COLOR_TYPE_GRAYSCALE
-						Case COLOR_TYPE_TRUECOLOR
-						Case COLOR_TYPE_INDEXED
-							Local color_index:= line_view.Get(channel_position)
-							
-							image_buffer.PokeInt(image_position, state.palette_data[color_index])
-						Case COLOR_TYPE_GRAYSCALE_ALPHA
-						Case COLOR_TYPE_TRUECOLOR_ALPHA
-							DebugStop()
-							
-							Local r:= line_view.Get(channel_position)
-							Local g:= line_view.Get(channel_position+1)
-							Local b:= line_view.Get(channel_position+2)
-							Local a:= line_view.Get(channel_position+3)
-					End
-					
-					image_position += pixel_stride
-					channel_position += color_channels
-				Next
-				
-				current_height += 1
+				state.current_height += 1
 			Until (input.Position >= chunk_end_position)
 			
 			If (advanced_errors) Then
@@ -580,9 +527,11 @@ Class PNG Implements PNGEntity
 			
 			The 'prev_chunk_type' argument must contain either the previous
 			chunk identifier, or in the case of first-execution, an empty 'String'.
+			
+			The 'scale_colors' argument is used to specify if scaling lower bit-depth colors is allowed.
 		#End
 		
-		Method DecodeChunk:Int(input:Stream, state:PNGDecodeState, chunk_type:String, chunk_length:Int, prev_chunk_type:String, advanced_errors:Bool=False)
+		Method DecodeChunk:Int(input:Stream, state:PNGDecodeState, chunk_type:String, chunk_length:Int, prev_chunk_type:String, scale_colors:Bool, advanced_errors:Bool=False)
 			' Check if we're done processing IDAT chunks:
 			If (state.image_data_found And prev_chunk_type = "IDAT" And chunk_type <> "IDAT") Then
 				state.image_data_complete = True
@@ -668,7 +617,7 @@ Class PNG Implements PNGEntity
 									image_data = AllocateImageData(header.width, header.height)
 								Endif
 								
-								If (Not IDAT(input, state, header, image_data, chunk_length, first_chunk, advanced_errors)) Then
+								If (Not IDAT(input, state, header, image_data, chunk_length, first_chunk, scale_colors, advanced_errors)) Then
 									Throw New PNGDecodeError(Self, state, "Incompatible IDAT chunk detected.")
 								Endif
 							Endif
@@ -717,11 +666,14 @@ Class PNG Implements PNGEntity
 			embeded CRC32 checksums match their corresponding data-segments.
 			
 			The 'fail_on_bad_integrity' argument is currently used for debugging purposes.
+			
+			The 'scale_colors' argument is used to specify if scaling lower bit-depth colors is allowed.
+			With this disabled, smaller values will be preserved; for example, 4-bit color channels will only allow 16 shades of darker colors.
 		#End
 		
-		Method Decode:Bool(input:Stream, state:PNGDecodeState, advanced_errors:Bool=False, integrity_checks:Bool=False, fail_on_bad_integrity:Bool=True)
-			' If the state already reports the end of the stream, don't bother continuing:
-			If (state.end_found) Then
+		Method Decode:Bool(input:Stream, state:PNGDecodeState, advanced_errors:Bool=False, integrity_checks:Bool=False, fail_on_bad_integrity:Bool=True, scale_colors:Bool=True)
+			' If the state doesn't exist, or it already reports the end of the stream, don't bother continuing:
+			If (state = Null Or state.end_found) Then
 				Return False
 			Endif
 			
@@ -748,8 +700,15 @@ Class PNG Implements PNGEntity
 				Print("PNG CHUNK {Type: " + chunk_type + ", Length: " + chunk_length + "} | BEGIN: " + chunk_begin + " | END: " + (chunk_begin + chunk_length) + " |")
 			#End
 			
+			' Implementation specific:
+			
+			' Manually disable 'scale_colors' if we're using 8-bit colors. (Optimization)
+			If (state.line_view <> Null And state.line_view.BitsPerChannel = 8) Then
+				scale_colors = False
+			Endif
+			
 			' Process a chunk from the data-stream.
-			Local chunk_response:= DecodeChunk(input, state, chunk_type, chunk_length, prev_chunk_type, advanced_errors)
+			Local chunk_response:= DecodeChunk(input, state, chunk_type, chunk_length, prev_chunk_type, scale_colors, advanced_errors)
 			
 			' Until marked later, chunks are assumed to be decoded properly.
 			Local chunk_skipped:Bool = (chunk_response = CHUNK_RESPONSE_SKIP)

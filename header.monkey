@@ -26,11 +26,34 @@ Class PNGHeader Implements PNGEntity Final
 		Self.compression_method = input.ReadByte()
 		Self.filter_method = input.ReadByte()
 		Self.interlace_method = input.ReadByte()
+		
+		#Rem
+			' Testing related:
+			If (Self.depth < 8) Then
+				Local bit_scalar:= (Float(Self.depth) / 8.0)
+				
+				Self.width = Int(Float(Self.width) * bit_scalar)
+				Self.height = Int(Float(Self.height) * bit_scalar)
+			Endif
+		#End
 	End
 	
 	' Properties:
-	Method ByteDepth:Int() Property
-		Return BitDepthInBytes(depth)
+	
+	' This specifies the accumulative color-depth of a pixel.
+	' For bits-per-pixel, use the 'depth' field.
+	Method TotalDepth:Int() Property
+		Return (depth * ColorChannels)
+	End
+	
+	' This specifies how many bytes are needed to store a pixel.
+	Method ByteDepth:Int() Property ' PixelLength
+		Return BitDepthInBytes(TotalDepth)
+	End
+	
+	' This specifies how many bytes are required to store a line of pixels.
+	Method LineLength:Int() Property
+		Return BitDepthInBytes((depth * ColorChannels) * width) ' (width * ByteDepth)
 	End
 	
 	Method ColorChannels:Int() Property

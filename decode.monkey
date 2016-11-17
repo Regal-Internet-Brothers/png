@@ -4,6 +4,7 @@ Public
 
 ' Friends:
 Friend regal.png.image
+Friend regal.png.util
 
 ' Imports (Public):
 Import config
@@ -13,6 +14,7 @@ Private
 
 Import util
 Import header
+Import image
 Import imageview
 
 Import regal.inflate
@@ -26,6 +28,57 @@ Public
 ' Classes:
 Class PNGDecodeState Implements PNGEntity Final
 	Public
+		' Functions:
+		
+		' This retrieves a color from 'line_view' at 'channel' and optionally scales it to 'scale_max'.
+		Function GetColor:Int(line_view:ImageView, channel:Int, scaled:Bool, scale_max:Int=$FF)
+			Local value:= line_view.Get(channel)
+			
+			If (scaled And value > 0) Then
+				Return Min(Int(Float(value) * (Float(scale_max) / Float(line_view.BitMask))), scale_max)
+			Endif
+			
+			Return value
+		End
+		
+		' The return-value of this function indicates if the operation was successful.
+		Function TransferPixel:Bool(image_buffer:DataBuffer, line_view:ImageView, image_position:Int, channel_position:Int, color_type:Int, scale_colors:Bool=True, palette_data:Int[]=[])
+			Select (color_type)
+				Case PNG_COLOR_TYPE_GRAYSCALE
+					Local gray:= GetColor(line_view, channel_position, scale_colors)
+					
+					image_buffer.PokeInt(image_position, EncodeColor(gray, gray, gray))
+				Case PNG_COLOR_TYPE_TRUECOLOR
+					Local r:= GetColor(line_view, channel_position, scale_colors)
+					Local g:= GetColor(line_view, (channel_position + 1), scale_colors)
+					Local b:= GetColor(line_view, (channel_position + 2), scale_colors)
+					
+					image_buffer.PokeInt(image_position, EncodeColor(r, g, b))
+				Case PNG_COLOR_TYPE_INDEXED
+					Local color_index:= line_view.Get(channel_position)
+					
+					image_buffer.PokeInt(image_position, palette_data[color_index])
+				Case PNG_COLOR_TYPE_GRAYSCALE_ALPHA
+					Local gray:= GetColor(line_view, channel_position, scale_colors)
+					Local alpha:= GetColor(line_view, (channel_position + 1), scale_colors)
+					
+					image_buffer.PokeInt(image_position, EncodeColor(gray, gray, gray, alpha))
+				Case PNG_COLOR_TYPE_TRUECOLOR_ALPHA
+					Local r:= GetColor(line_view, channel_position, scale_colors)
+					Local g:= GetColor(line_view, (channel_position + 1), scale_colors)
+					Local b:= GetColor(line_view, (channel_position + 2), scale_colors)
+					Local a:= GetColor(line_view, (channel_position + 3), scale_colors)
+					
+					image_buffer.PokeInt(image_position, EncodeColor(r, g, b, a))
+				Default
+					' The color-type specified is unsupported.
+					Return False
+			End
+			
+			' Return the default response.
+			Return True
+		End
+		
 		' Constructor(s):
 		Method New()
 			' Nothing so far.
@@ -52,11 +105,8 @@ Class PNGDecodeState Implements PNGEntity Final
 		
 		' This initializes the internal scan-line buffer.
 		Method InitializeLineBuffer:Bool(header:PNGHeader)
-			' Constant variable(s):
-			Const FILTER_HEADER_SIZE:= 1
-			
 			#If REGAL_PNG_SAFE
-				If (Self.raw_image_line <> Null) Then
+				If (Self.line_buffer <> Null) Then
 					Return False
 				Endif
 			#End
@@ -71,18 +121,18 @@ Class PNGDecodeState Implements PNGEntity Final
 			
 			' Allocate a raw image buffer to store decoded output from the data-stream.
 			' The size of this buffer is the maximum number of bytes required
-			' to store a line from the data-stream described by 'header'.
-			Self.raw_image_line = New DataBuffer((header.width * header.ByteDepth) + FILTER_HEADER_SIZE)
+			' to store two lines of pixels from the data-stream described by 'header'.
+			Self.line_buffer = New DataBuffer(header.LineLength * 2)
 			
 			#If REGAL_PNG_SAFE Or CONFIG = "debug"
-				SetBuffer(Self.raw_image_line, 0)
+				SetBuffer(Self.line_buffer, 0)
 			#End
 			
 			' Create an image-view of our line-buffer.
-			Self.line_view = New ImageView(Self.raw_image_line, header.ColorChannels, header.depth, FILTER_HEADER_SIZE)
+			Self.line_view = New ImageView(Self.line_buffer, header.ColorChannels, header.TotalDepth)
 			
 			#If REGAL_PNG_SAFE
-				Return (Self.raw_image_line <> Null) ' And (Self.raw_image_line.Length > 0)
+				Return (Self.line_buffer <> Null) ' And (Self.line_buffer.Length > 0)
 			#Else
 				Return True
 			#End
@@ -118,6 +168,127 @@ Class PNGDecodeState Implements PNGEntity Final
 		
 		Method PatchPalette:Bool(data:Int[])
 			Return PatchPalette(data, data.Length)
+		End
+		
+		' Decoding routines:
+		
+		' This decodes the raw contents of a line from the inflation-stream.
+		' The 'file' argument must reference a valid 'PNG' object.
+		' The return-value of this command is an inflation response-code.
+		Method DecodeLine:Int(file:PNG, line_view:ImageView, line_length:Int) ' header:PNGHeader
+			Local inflate_response:Int
+			
+			Local line_stream:= Self.inflate_session.destination
+			Local line_buffer:= line_view.Data ' line_stream.Data ' Self.line_buffer
+			
+			Local start_position:= line_stream.Position
+			
+			' Not the most efficient approach, but it works:
+			If (start_position = line_stream.Length) Then
+				' Make a copy of the second line and place it at the beginning of the buffer.
+				line_buffer.CopyBytes(line_length, line_buffer, 0, line_length)
+				
+				' Now that the previous line has been copied to the beginning, seek back
+				' to the middle of the stream so that the current line may be placed there.
+				start_position = line_stream.Seek(line_length)
+				
+				' Update the line-view to begin at the current line.
+				line_view.Offset = line_length
+			Endif
+			
+			' Get the filtering type from the input-stream, then fix the output-position:
+			inflate_response = InflateBytes(line_stream, Self, PNG_FILTER_HEADER_LENGTH)
+			
+			' Check if we should continue:
+			If (inflate_response <> INF_OK) Then
+				Return inflate_response
+			Endif
+			
+			' Load the filter-type from the line-stream.
+			Self.filter_type = line_stream.ReadByte()
+			'Self.filter_type = line_buffer.PeekByte(line_view.Offset)
+			
+			' Seek back to where we were.
+			line_stream.Seek(start_position)
+			
+			' Read a line from the data-stream:
+			While (line_stream.Position < (start_position + line_length))
+				inflate_response = Inflate_Checksum(Self.inflate_context, Self.inflate_session, True) ' Inflate
+				
+				' Check if we're not continuing the line:
+				If (inflate_response <> INF_OK) Then
+					Exit ' Return inflate_response
+				Endif
+			Wend
+			
+			Return inflate_response
+		End
+		
+		' The return-value of this command indicates if the line was
+		' filtered according to the filtering type specified.
+		Method FilterLine:Bool(line_view:ImageView, line_length:Int, filter_type:Int, filter_method:Int=PNG_FILTER_METHOD_DEFAULT)
+			Local line_buffer:= line_view.Data
+			
+			'DebugStop()
+			
+			' Check which filtering type was specified:
+			Select (filter_type)
+				Case PNG_FILTER_TYPE_NONE
+					Return True
+				Case PNG_FILTER_TYPE_SUB
+					''DebugStop()
+					
+					Return False
+					
+					Local cur_line_off:= line_view.Offset
+					
+					DebugStop()
+					
+					Return FilterLine_Sub(line_buffer, line_buffer, line_buffer, line_length, 0, cur_line_off, cur_line_off)
+				Case PNG_FILTER_TYPE_UP
+					' Nothing so far.
+				Case PNG_FILTER_TYPE_AVERAGE
+					' Nothing so far.
+				Case PNG_FILTER_TYPE_PAETH
+					' Nothing so far.
+			End Select
+			
+			' Return the default response.
+			Return False
+		End
+		
+		Method FilterLine_Sub:Bool(prev_line:DataBuffer, in_line:DataBuffer, out_line:DataBuffer, line_length:Int, prev_line_offset:Int=0, in_line_offset:Int=0, out_line_offset:Int=0)
+			'Local line_buffer:= line_view.Data
+			
+			'DebugStop()
+			
+			Local out_position:= 0
+			
+			For Local in_position:= 0 Until line_length
+				Local x:= (in_line.PeekByte(in_line_offset + in_position) & $FF)
+				Local a:= (prev_line.PeekByte(out_position + prev_line_offset) & $FF)
+				
+				out_line.PokeByte((out_position + out_line_offset), ((x + a) & $FF))
+				
+				out_position += 1
+			Next
+			
+			Return True ' (out_position > 0)
+		End
+		
+		' This transfers the contents of 'line_view' into 'image_buffer'.
+		Method TransferLine:Void(image_buffer:DataBuffer, line_view:ImageView, line_width:Int, pixel_stride:Int, color_type:Int, scale_colors:Bool) ' palette_data:Int[]
+			Local color_channels:= line_view.Channels
+			
+			Local image_position:= ((line_width * Self.current_height) * pixel_stride)
+			Local channel_position:= 0
+			
+			For Local x:= 0 Until line_width
+				TransferPixel(image_buffer, line_view, image_position, channel_position, color_type, scale_colors, palette_data) ' Self.palette_data
+				
+				image_position += pixel_stride
+				channel_position += color_channels
+			Next
 		End
 		
 		' Properties:
@@ -207,6 +378,23 @@ Class PNGDecodeState Implements PNGEntity Final
 	Protected
 		' Fields:
 		
+		#Rem
+			This stores the current Y coordinate in the targeted 'PNG' object's image-buffer.
+			This variable is stored here in order to preserve its state between multiple decode-passes.
+		#End
+		
+		Field current_height:Int
+		
+		#Rem
+			The last known filter-type associated with
+			the current segment of the line-buffer.
+			
+			This should not be confused with 'PNGHeader.filter_method',
+			which specifies a filtering method for early error detection.
+		#End
+		
+		Field filter_type:Int
+		
 		' Chunk meta-data:
 		Field chunk_length:Int
 		Field chunk_type:String ' chunk_name
@@ -230,9 +418,9 @@ Class PNGDecodeState Implements PNGEntity Final
 		
 		' A buffer containing the current line-data last taken from a decompression stream.
 		' NOTE: This buffer also contains the filter-type header before the image-data.
-		Field raw_image_line:DataBuffer
+		Field line_buffer:DataBuffer
 		
-		' A view of 'raw_image_line' offset by the filter-type header.
+		' A view of 'line_buffer' offset by the filter-type header.
 		Field line_view:ImageView
 		
 		' Inflation functionality:

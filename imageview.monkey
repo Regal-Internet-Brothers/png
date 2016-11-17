@@ -185,12 +185,28 @@ Class ImageView
 				offset = ((index - (channels - 1)) / channels)
 			Endif
 			
+			Local bits_per_channel:= BitsPerChannel
+			
+			If (bits_per_channel < 8) Then
+				Return ((offset * bits_per_channel) / 8)
+			Endif
+			
 			Return (offset * DepthInBytes)
 		End
 		
 		' This converts a global index used for contiguous data-access to
 		' a local channel index used for bitwise manipulation.
 		Method IndexToChannel:Int(index:Int)
+			Local channels:Int
+			
+			Local bits_per_channel:= BitsPerChannel
+			
+			If (bits_per_channel < 8) Then
+				channels = (8 / bits_per_channel)
+			Else
+				channels = Self.channels
+			Endif
+			
 			If (index = 0) Then
 				Return 0
 			Elseif (index > 0) Then
