@@ -26,16 +26,6 @@ Class PNGHeader Implements PNGEntity Final
 		Self.compression_method = input.ReadByte()
 		Self.filter_method = input.ReadByte()
 		Self.interlace_method = input.ReadByte()
-		
-		#Rem
-			' Testing related:
-			If (Self.depth < 8) Then
-				Local bit_scalar:= (Float(Self.depth) / 8.0)
-				
-				Self.width = Int(Float(Self.width) * bit_scalar)
-				Self.height = Int(Float(Self.height) * bit_scalar)
-			Endif
-		#End
 	End
 	
 	' Properties:

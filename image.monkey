@@ -429,8 +429,14 @@ Class PNG Implements PNGEntity
 				' Initialize the temporary line-buffer.
 				state.InitializeLineBuffer(header)
 				
+				' Allocate an output-stream in order to manipulate line-content.
+				Local out_stream:= New PublicDataStream(state.line_buffer, state.line_buffer.Length)
+				
 				' Initialize an inflate session.
-				state.inflate_session = New InfSession(input, New PublicDataStream(state.line_buffer, state.line_buffer.Length), 1)
+				state.inflate_session = New InfSession(input, out_stream, 1)
+				
+				' Seek to the second line.
+				out_stream.Seek(header.LineLength) ' (out_stream.Data / 2)
 				
 				' Read the 'zlib' compression-header at the start of the chunk-data.
 				' This also performs basic setup work for 'Inflate_Checksum'.
@@ -473,7 +479,7 @@ Class PNG Implements PNGEntity
 				
 				Local filter_type:= state.filter_type
 				
-				state.FilterLine(line_view, line_length, filter_type, header.filter_method)
+				state.FilterLine(line_view, line_width, line_length, filter_type, header.filter_method)
 				
 				state.TransferLine(image_buffer, line_view, line_width, pixel_stride, header.color_type, scale_colors)
 				

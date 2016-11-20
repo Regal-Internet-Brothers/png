@@ -49,6 +49,8 @@ Class ImageView
 			Local address:= IndexToAddress(index)
 			Local channel:= IndexToChannel(index)
 			
+			'DebugStop()
+			
 			Local depth_in_bytes:= DepthInBytes
 			Local bytes_per_channel:= BytesPerChannel
 			Local channel_stride:= BitsPerChannel ' bytes_per_channel * 8
@@ -67,7 +69,38 @@ Class ImageView
 				value_size = depth_in_bytes
 			Endif
 			
-			Return ((GetRaw(address, value_size) Shr (channel * channel_stride)) & BitMask)
+			Local raw:= GetRaw(address, value_size)
+			
+			If (BitsPerChannel = 1) Then
+				raw = ReverseByte(raw)
+				
+				'DebugStop()
+				
+				Return (raw Shr channel) & 1
+			Endif
+			
+			Local bmsk:= BitMask
+			Local out:= (raw Shr (channel * channel_stride)) & bmsk
+			
+			#Rem
+			Local toggle:= False
+			
+			If (toggle And out <> 1) Then
+				Local a:= data.PeekByte(0) & $FF
+				Local b:= data.PeekByte(1) & $FF
+				Local c:= data.PeekByte(2) & $FF
+				Local d:= data.PeekByte(3) & $FF
+				
+				Print("---")
+				Print(Bin(_raw))
+				Print(Bin(raw))
+				Print("___")
+				
+				DebugStop()
+			Endif
+			#End
+			
+			Return out
 		End
 		
 		Method Set:Void(index:Int, value:Int)
@@ -94,7 +127,7 @@ Class ImageView
 			
 			Local current_value:= GetRaw(address, value_size)
 			
-			Local out_value:= ((value & BitMask) Shl (channel * channel_stride))
+			Local out_value:= Lsl((value & BitMask), (channel * channel_stride))
 			
 			SetRaw(address, value_size, (current_value | out_value))
 		End
@@ -252,6 +285,7 @@ Class ImageView
 		End
 		
 		' This specifies the minimum number of bytes required to store 'Depth'.
+		' In other words, this specifies how many bytes are required to store a pixel.
 		Method DepthInBytes:Int() Property
 			Return BitDepthInBytes(Depth)
 		End

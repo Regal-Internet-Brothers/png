@@ -10,6 +10,7 @@ Import brl.stream
 Import brl.databuffer
 
 Import regal.ioutil.util
+Import regal.hash.external ' util
 
 ' Imports (Private):
 Private
@@ -66,6 +67,18 @@ End
 ' useful for mapping bytes to integers.
 Function EncodeInt:Int(a:Int, b:Int, c:Int, d:Int)
 	Return EncodeColor(a, b, c, d)
+End
+
+' This reverses the bit-order in the byte specified.
+' Example (Bits): 011 = 110
+Function ReverseByte:Int(b:Int)
+	b = (b & $FF)
+	
+	b = Lsr((b & $F0), 4) | Lsl((b & $0F), 4)
+	b = Lsr((b & $CC), 2) | Lsl((b & $33), 2)
+	b = Lsr((b & $AA), 1) | Lsl((b & $55), 1)
+	
+	Return b
 End
 
 ' This allocates a 'DataBuffer' used to storing the contents of an uncompressed image.

@@ -47,6 +47,8 @@ Class PNGDecodeState Implements PNGEntity Final
 				Case PNG_COLOR_TYPE_GRAYSCALE
 					Local gray:= GetColor(line_view, channel_position, scale_colors)
 					
+					'DebugStop()
+					
 					image_buffer.PokeInt(image_position, EncodeColor(gray, gray, gray))
 				Case PNG_COLOR_TYPE_TRUECOLOR
 					Local r:= GetColor(line_view, channel_position, scale_colors)
@@ -61,6 +63,8 @@ Class PNGDecodeState Implements PNGEntity Final
 				Case PNG_COLOR_TYPE_GRAYSCALE_ALPHA
 					Local gray:= GetColor(line_view, channel_position, scale_colors)
 					Local alpha:= GetColor(line_view, (channel_position + 1), scale_colors)
+					
+					'DebugStop()
 					
 					image_buffer.PokeInt(image_position, EncodeColor(gray, gray, gray, alpha))
 				Case PNG_COLOR_TYPE_TRUECOLOR_ALPHA
@@ -119,17 +123,19 @@ Class PNGDecodeState Implements PNGEntity Final
 			' Where 'FILTER' is a one-byte filtering mode referenced
 			' in the header, but still available on each line.
 			
+			Local line_length:= header.LineLength
+			
 			' Allocate a raw image buffer to store decoded output from the data-stream.
 			' The size of this buffer is the maximum number of bytes required
 			' to store two lines of pixels from the data-stream described by 'header'.
-			Self.line_buffer = New DataBuffer(header.LineLength * 2)
+			Self.line_buffer = New DataBuffer(line_length * 2)
 			
-			#If REGAL_PNG_SAFE Or CONFIG = "debug"
-				SetBuffer(Self.line_buffer, 0)
-			#End
+			'#If REGAL_PNG_SAFE Or CONFIG = "debug"
+			SetBuffer(Self.line_buffer, 0)
+			'#End
 			
 			' Create an image-view of our line-buffer.
-			Self.line_view = New ImageView(Self.line_buffer, header.ColorChannels, header.TotalDepth)
+			Self.line_view = New ImageView(Self.line_buffer, header.ColorChannels, header.TotalDepth, line_length)
 			
 			#If REGAL_PNG_SAFE
 				Return (Self.line_buffer <> Null) ' And (Self.line_buffer.Length > 0)
@@ -183,6 +189,8 @@ Class PNGDecodeState Implements PNGEntity Final
 			
 			Local start_position:= line_stream.Position
 			
+			'DebugStop()
+			
 			' Not the most efficient approach, but it works:
 			If (start_position = line_stream.Length) Then
 				' Make a copy of the second line and place it at the beginning of the buffer.
@@ -193,7 +201,7 @@ Class PNGDecodeState Implements PNGEntity Final
 				start_position = line_stream.Seek(line_length)
 				
 				' Update the line-view to begin at the current line.
-				line_view.Offset = line_length
+				'line_view.Offset = line_length
 			Endif
 			
 			' Get the filtering type from the input-stream, then fix the output-position:
@@ -205,8 +213,8 @@ Class PNGDecodeState Implements PNGEntity Final
 			Endif
 			
 			' Load the filter-type from the line-stream.
-			Self.filter_type = line_stream.ReadByte()
-			'Self.filter_type = line_buffer.PeekByte(line_view.Offset)
+			Self.filter_type = line_stream.ReadByte() & $FF
+			'Self.filter_type = line_buffer.PeekByte(line_view.Offset) & $FF
 			
 			' Seek back to where we were.
 			line_stream.Seek(start_position)
@@ -226,54 +234,106 @@ Class PNGDecodeState Implements PNGEntity Final
 		
 		' The return-value of this command indicates if the line was
 		' filtered according to the filtering type specified.
-		Method FilterLine:Bool(line_view:ImageView, line_length:Int, filter_type:Int, filter_method:Int=PNG_FILTER_METHOD_DEFAULT)
+		Method FilterLine:Bool(line_view:ImageView, line_width:Int, line_length:Int, filter_type:Int, filter_method:Int=PNG_FILTER_METHOD_DEFAULT)
 			Local line_buffer:= line_view.Data
 			
-			'DebugStop()
+			Local offset:= line_view.Offset
+			Local stride:= line_view.DepthInBytes
 			
 			' Check which filtering type was specified:
 			Select (filter_type)
 				Case PNG_FILTER_TYPE_NONE
 					Return True
 				Case PNG_FILTER_TYPE_SUB
-					''DebugStop()
-					
-					Return False
-					
-					Local cur_line_off:= line_view.Offset
-					
-					DebugStop()
-					
-					Return FilterLine_Sub(line_buffer, line_buffer, line_buffer, line_length, 0, cur_line_off, cur_line_off)
+					Return FilterLine_Sub(line_buffer, line_length, offset, stride)
 				Case PNG_FILTER_TYPE_UP
-					' Nothing so far.
+					Return FilterLine_Up(line_buffer, line_length, offset, stride)
 				Case PNG_FILTER_TYPE_AVERAGE
-					' Nothing so far.
+					Return FilterLine_Average(line_buffer, line_length, offset, stride)
 				Case PNG_FILTER_TYPE_PAETH
-					' Nothing so far.
+					Return FilterLine_Paeth(line_buffer, line_length, offset, stride)
 			End Select
 			
 			' Return the default response.
 			Return False
 		End
 		
-		Method FilterLine_Sub:Bool(prev_line:DataBuffer, in_line:DataBuffer, out_line:DataBuffer, line_length:Int, prev_line_offset:Int=0, in_line_offset:Int=0, out_line_offset:Int=0)
-			'Local line_buffer:= line_view.Data
-			
-			'DebugStop()
-			
-			Local out_position:= 0
-			
-			For Local in_position:= 0 Until line_length
-				Local x:= (in_line.PeekByte(in_line_offset + in_position) & $FF)
-				Local a:= (prev_line.PeekByte(out_position + prev_line_offset) & $FF)
+		Method FilterLine_Sub:Bool(line_buffer:DataBuffer, line_length:Int, view_offset:Int, pixel_stride:Int)
+			For Local I:= 0 Until line_length
+				Local position:= (view_offset + I)
 				
-				out_line.PokeByte((out_position + out_line_offset), ((x + a) & $FF))
+				Local x:= (line_buffer.PeekByte(position) & $FF) ' Current
+				Local a:= (line_buffer.PeekByte((position - pixel_stride)) & $FF) ' Left
 				
-				out_position += 1
+				line_buffer.PokeByte(position, ((x + a) & $FF))
 			Next
 			
-			Return True ' (out_position > 0)
+			Return True
+		End
+		
+		Method FilterLine_Up:Bool(line_buffer:DataBuffer, line_length:Int, view_offset:Int, pixel_stride:Int)
+			For Local I:= 0 Until line_length
+				Local position:= (view_offset + I)
+				
+				Local x:= (line_buffer.PeekByte(position) & $FF) ' Current
+				Local b:= (line_buffer.PeekByte(I) & $FF) ' Up
+				
+				line_buffer.PokeByte(position, ((x + b) & $FF))
+			Next
+			
+			Return True
+		End
+		
+		Method FilterLine_Average:Bool(line_buffer:DataBuffer, line_length:Int, view_offset:Int, pixel_stride:Int)
+			For Local I:= 0 Until line_length
+				Local position:= (view_offset + I)
+				
+				Local x:= (line_buffer.PeekByte(position) & $FF) ' Current
+				Local a:= (line_buffer.PeekByte((position - pixel_stride)) & $FF) ' Left
+				Local b:= (line_buffer.PeekByte(I) & $FF) ' Up
+				
+				line_buffer.PokeByte(position, (x + ((a + b) / 2)) & $FF) ' Shr 1
+			Next
+			
+			Return True
+		End
+		
+		Method FilterLine_Paeth:Bool(line_buffer:DataBuffer, line_length:Int, view_offset:Int, pixel_stride:Int)
+			For Local I:= 0 Until line_length
+				Local position:= (view_offset + I)
+				
+				Local x:= (line_buffer.PeekByte(position) & $FF) ' Current
+				Local a:= (line_buffer.PeekByte((position - pixel_stride)) & $FF) ' Left
+				Local b:= (line_buffer.PeekByte(I) & $FF) ' Up
+				
+				Local c:Int
+				
+				If (I > 0) Then
+					c = (line_buffer.PeekByte((I - pixel_stride)) & $FF) ' Top-Left
+				Else
+					c = 0
+				Endif
+				
+				Local p:= (a + b - c)
+				
+				Local pa:= Abs(p - a)
+				Local pb:= Abs(p - b)
+				Local pc:= Abs(p - c)
+				
+				Local pr:Int
+				
+				If (pa <= pb And pa <= pc) Then
+					pr = a
+				Elseif (pb <= pc) Then
+					pr = b
+				Else
+					pr = c
+				Endif
+				
+				line_buffer.PokeByte(position, ((x + pr) & $FF))
+			Next
+			
+			Return True
 		End
 		
 		' This transfers the contents of 'line_view' into 'image_buffer'.
