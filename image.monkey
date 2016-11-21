@@ -92,9 +92,9 @@ Class PNG Implements PNGEntity
 		Const COLOR_TYPE_GREYSCALE_ALPHA:= COLOR_TYPE_GRAYSCALE_ALPHA
 		
 		' Image types:
-		Const IMAGE_TYPE_RGBA:= 0
-		'Const IMAGE_TYPE_ARGB:= 1
-		'Const IMAGE_TYPE_BGRA:= 2
+		Const IMAGE_TYPE_RGBA:= PNG_IMAGE_TYPE_RGBA
+		'Const IMAGE_TYPE_ARGB:= PNG_IMAGE_TYPE_ARGB
+		'Const IMAGE_TYPE_BGRA:= PNG_IMAGE_TYPE_BGRA
 		
 		' Compression methods:
 		Const COMPRESSION_METHOD_DEFLATE:= PNG_COMPRESSION_METHOD_DEFLATE
@@ -540,6 +540,22 @@ Class PNG Implements PNGEntity
 			Return True
 		End
 		
+		' This loads the gamma value stored in a gAMA chunk into 'state',
+		' then returns the raw value for debugging purposes.
+		Method gAMA:Int(input:Stream, state:PNGDecodeState)
+			' Constant variable(s):
+			Const GAMMA_MAX:= 100000.0
+			
+			' Load the encoded gamma value. (0-100000)
+			Local raw_gamma:= input.ReadInt()
+			
+			' Scale the gamma value to a normalized ratio.
+			state.gamma = (Float(raw_gamma) / GAMMA_MAX)
+			
+			' Return the original value to the user.
+			Return raw_gamma
+		End
+		
 		#Rem
 			This decodes a PNG chunk to the best of this implementation's ability.
 			
@@ -614,7 +630,7 @@ Class PNG Implements PNGEntity
 							Endif
 							
 							If (state.image_data_found) Then
-								Throw New PNGDecodeError(Self, state, "PLTE chunk detected after IDAT chunk: Internal Error")
+								Throw New PNGDecodeError(Self, state, "Invalid PLTE chunk detected; PLTE chunks must appear before IDAT chunks.")
 							Endif
 							
 							' Initialize the 'state' object's internal palette buffer.
@@ -625,6 +641,15 @@ Class PNG Implements PNGEntity
 							
 							' Load and check the legitimacy of the described palette data.
 							PLTE(input, state, state.palette_data, advanced_errors)
+							
+							' Report implementation-specific limitations:
+							If (state.gamma_found) Then
+								#If REGAL_PNG_DISABLE_GAMMA_CORRECTION
+									Throw New PNGDecodeError(Self, state, "Gamma-corrected PLTE chunks are either not supported or disabled.")
+								#Else
+									state.ApplyGammaToPalette(ImageType)
+								#End
+							Endif
 						Case "IDAT" ' Image data; multiple allowed.
 							' State safety:
 							If (state.image_data_complete) Then
@@ -646,10 +671,34 @@ Class PNG Implements PNGEntity
 									image_data = AllocateImageData(header.width, header.height)
 								Endif
 								
+								' Load image-data from this IDAT chunk.
 								If (Not IDAT(input, state, header, image_data, chunk_length, first_chunk, scale_colors, advanced_errors)) Then
 									Throw New PNGDecodeError(Self, state, "Incompatible IDAT chunk detected.")
 								Endif
 							Endif
+						Case "gAMA"
+							' State safety:
+							#If REGAL_PNG_DISABLE_GAMMA_CORRECTION
+								Throw New PNGDecodeError(Self, state, "This implementation either does not support gamma-correction, or it is currently disabled.")
+							#End
+							
+							If (state.gamma_found) Then
+								If (Not state.custom_gamma) Then
+									Throw New PNGDecodeError(Self, state, "Only one gAMA chunk is allowed in a PNG data-stream.")
+								Else
+									Return CHUNK_RESPONSE_SKIP
+								Endif
+							Endif
+							
+							If (state.image_data_found Or state.palette_found) Then ' Or state.image_data_complete
+								Throw New PNGDecodeError(Self, state, "Invalid gAMA chunk detected, gamma values must precede both IDAT and PLTE chunks.")
+							Endif
+							
+							' Update the state.
+							state.gamma_found = True
+							
+							' Load the gamma-value from the data-stream into 'state'.
+							gAMA(input, state)
 						Default
 							' End-detection and unsupported chunks:
 							Select (chunk_type)
@@ -733,10 +782,11 @@ Class PNG Implements PNGEntity
 				Print("PNG CHUNK {Type: " + chunk_type + ", Length: " + chunk_length + "} | BEGIN: " + chunk_begin + " | END: " + (chunk_begin + chunk_length) + " |")
 			#End
 			
-			' Implementation specific:
+			' Implementation-specific:
 			
-			' Manually disable 'scale_colors' if we're using 8-bit colors. (Optimization)
-			If (state.line_view <> Null And state.line_view.BitsPerChannel = 8) Then
+			' Manually disable 'scale_colors' if we're using 8-bit color
+			' channels, and we have no reason to change them (Optimization):
+			If (Not state.gamma_found And state.line_view <> Null And state.line_view.BitsPerChannel = 8) Then
 				scale_colors = False
 			Endif
 			

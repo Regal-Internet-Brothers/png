@@ -308,7 +308,7 @@ Class ImageView
 				Return $FFFFFFFF
 			Endif
 			
-			Return (Pow(2, bits_per_channel) - 1)
+			Return (Int(Pow(2, bits_per_channel)) - 1)
 		End
 	Protected
 		' Fields:

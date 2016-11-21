@@ -26,6 +26,11 @@ Const PNG_ZLIB_HEADER_LENGTH:= 2
 Const PNG_CHUNK_IDENT_LENGTH:= 4
 Const PNG_FILTER_HEADER_LENGTH:= 1
 
+' Image types:
+Const PNG_IMAGE_TYPE_RGBA:= 0
+'Const PNG_IMAGE_TYPE_ARGB:= 1
+'Const PNG_IMAGE_TYPE_BGRA:= 2
+
 ' Color types:
 Const PNG_COLOR_TYPE_GRAYSCALE:= 0
 Const PNG_COLOR_TYPE_TRUECOLOR:= 2
@@ -46,6 +51,22 @@ Const PNG_FILTER_TYPE_PAETH:= 4
 Const PNG_FILTER_METHOD_DEFAULT:= 0
 
 ' Functions:
+Function GammaEnabled:Bool()
+	#If REGAL_PNG_DISABLE_GAMMA_CORRECTION
+		Return False
+	#Else
+		Return True
+	#End
+End
+
+Function GetChannelMaxByType:Int(image_type:Int)
+	Select (image_type)
+		Case PNG_IMAGE_TYPE_RGBA ' PNG_IMAGE_TYPE_ARGB ' PNG_IMAGE_TYPE_BGRA
+			Return 255
+	End Select
+	
+	Return 0
+End
 
 ' This returns the number of bytes needed to hold 'bits'.
 Function BitDepthInBytes:Int(bits:Int)
@@ -61,6 +82,22 @@ Function EncodeColor:Int(r:Int, g:Int, b:Int, a:Int=255) ' 0
 	Local out_a:= ((a & $FF) Shl 24)
 	
 	Return (out_r|out_g|out_b|out_a)
+End
+
+Function DecodeColor_R:Int(color:Int)
+	Return ((color) & $FF)
+End
+
+Function DecodeColor_G:Int(color:Int)
+	Return ((color Shr 8) & $FF)
+End
+
+Function DecodeColor_B:Int(color:Int)
+	Return ((color Shr 16) & $FF)
+End
+
+Function DecodeColor_A:Int(color:Int)
+	Return ((color Shr 24) & $FF)
 End
 
 ' Currently just a wrapper for 'EncodeColor';

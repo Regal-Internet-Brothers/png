@@ -31,29 +31,97 @@ Class PNGDecodeState Implements PNGEntity Final
 		' Functions:
 		
 		' This retrieves a color from 'line_view' at 'channel' and optionally scales it to 'scale_max'.
-		Function GetColor:Int(line_view:ImageView, channel:Int, scaled:Bool, scale_max:Int=$FF)
+		' If 'REGAL_PNG_DISABLE_GAMMA_CORRECTION' is defined, the 'gamma' argument does nothing.
+		Function GetColor:Int(line_view:ImageView, channel:Int, scaled:Bool, gamma_enabled:Bool, gamma:Float, scale_max:Int=$FF) ' scale_max:Float
 			Local value:= line_view.Get(channel)
 			
 			If (scaled And value > 0) Then
-				Return Min(Int(Float(value) * (Float(scale_max) / Float(line_view.BitMask))), scale_max)
+				Local view_max:= line_view.BitMask
+				
+				If (gamma_enabled) Then
+					Return ScaleColor(value, view_max, scale_max)
+				Else
+					Return Int(ScaleColorWithGamma(value, view_max, scale_max, gamma))
+				Endif
 			Endif
 			
 			Return value
 		End
 		
+		Function ColorToSample:Float(channel_data:Int, channel_max:Int)
+			Return (Float(channel_data) / Float(channel_max))
+		End
+		
+		Function SampleToColor:Int(sample:Float, channel_max:Int)
+			Return Int(ScaleSampleToColor(sample, Float(channel_max)))
+		End
+		
+		' This performs a linear scale of 'value' using the maximum color-values provided.
+		Function ScaleColor:Int(value:Int, input_max:Int, output_max:Int)
+			Return Min(Int(Float(value) * (Float(output_max) / Float(input_max))), output_max)
+		End
+		
+		' This attempts to accurately scale 'value' according to 'view_max' and 'scale_max' while applying 'gamma'.
+		Function ScaleColorWithGamma:Float(value:Int, view_max:Int, scale_max:Int, gamma:Float)
+			Local sample:= (Float(value) / Float(view_max))
+			Local display_input:= ApplyGammaToSample(sample, gamma)
+			Local framebuf_sample:= ScaleSampleToColor(display_input, scale_max)
+			
+			Return framebuf_sample
+		End
+		
+		Function ScaleSampleToColor:Float(sample:Float, channel_max:Float)
+			Return Floor((sample * channel_max) + 0.5)
+		End
+		
+		Function ApplyGammaToSample:Float(sample:Float, gamma:Float)
+			Return Pow(sample, (1.0 / gamma)) ' (gamma * display_exponent)
+		End
+		
+		Function ApplyGammaToColor:Int(color_data:Int, color_channel_max:Int, gamma:Float)
+			Local sample:= ColorToSample(color_data, color_channel_max)
+			
+			sample = ApplyGammaToSample(sample, gamma)
+			
+			Return SampleToColor(sample, color_channel_max)
+		End
+		
+		' NOTE: Gamma isn't applied to alpha channels by design.
+		Function ApplyGammaToPalette:Void(palette:Int[], gamma:Float, image_type:Int=PNG_IMAGE_TYPE_RGBA)
+			Local color_channel_max:= GetChannelMaxByType(image_type)
+			
+			For Local index:= 0 Until palette.Length
+				Local color:= palette[index]
+				
+				Local r:= DecodeColor_R(color)
+				Local g:= DecodeColor_G(color)
+				Local b:= DecodeColor_B(color)
+				Local a:= DecodeColor_A(color)
+				
+				r = ApplyGammaToColor(r, color_channel_max, gamma)
+				g = ApplyGammaToColor(g, color_channel_max, gamma)
+				b = ApplyGammaToColor(b, color_channel_max, gamma)
+				
+				palette[index] = EncodeColor(r, g, b, a)
+			Next
+		End
+		
+		' NOTE: Gamma is never applied to alpha channels by design.
 		' The return-value of this function indicates if the operation was successful.
-		Function TransferPixel:Bool(image_buffer:DataBuffer, line_view:ImageView, image_position:Int, channel_position:Int, color_type:Int, scale_colors:Bool=True, palette_data:Int[]=[])
+		Function TransferPixel:Bool(image_buffer:DataBuffer, line_view:ImageView, image_position:Int, channel_position:Int, color_type:Int, scale_colors:Bool=True, palette_data:Int[]=[], gamma:Float=1.0)
+			Local gamma_enabled:= GammaEnabled()
+			
 			Select (color_type)
 				Case PNG_COLOR_TYPE_GRAYSCALE
-					Local gray:= GetColor(line_view, channel_position, scale_colors)
+					Local gray:= GetColor(line_view, channel_position, scale_colors, gamma_enabled, gamma)
 					
 					'DebugStop()
 					
 					image_buffer.PokeInt(image_position, EncodeColor(gray, gray, gray))
 				Case PNG_COLOR_TYPE_TRUECOLOR
-					Local r:= GetColor(line_view, channel_position, scale_colors)
-					Local g:= GetColor(line_view, (channel_position + 1), scale_colors)
-					Local b:= GetColor(line_view, (channel_position + 2), scale_colors)
+					Local r:= GetColor(line_view, channel_position, scale_colors, gamma_enabled, gamma)
+					Local g:= GetColor(line_view, (channel_position + 1), scale_colors, gamma_enabled, gamma)
+					Local b:= GetColor(line_view, (channel_position + 2), scale_colors, gamma_enabled, gamma)
 					
 					image_buffer.PokeInt(image_position, EncodeColor(r, g, b))
 				Case PNG_COLOR_TYPE_INDEXED
@@ -61,17 +129,17 @@ Class PNGDecodeState Implements PNGEntity Final
 					
 					image_buffer.PokeInt(image_position, palette_data[color_index])
 				Case PNG_COLOR_TYPE_GRAYSCALE_ALPHA
-					Local gray:= GetColor(line_view, channel_position, scale_colors)
-					Local alpha:= GetColor(line_view, (channel_position + 1), scale_colors)
+					Local gray:= GetColor(line_view, channel_position, scale_colors, gamma_enabled, gamma)
+					Local alpha:= GetColor(line_view, (channel_position + 1), scale_colors, False, gamma)
 					
 					'DebugStop()
 					
 					image_buffer.PokeInt(image_position, EncodeColor(gray, gray, gray, alpha))
 				Case PNG_COLOR_TYPE_TRUECOLOR_ALPHA
-					Local r:= GetColor(line_view, channel_position, scale_colors)
-					Local g:= GetColor(line_view, (channel_position + 1), scale_colors)
-					Local b:= GetColor(line_view, (channel_position + 2), scale_colors)
-					Local a:= GetColor(line_view, (channel_position + 3), scale_colors)
+					Local r:= GetColor(line_view, channel_position, scale_colors, gamma_enabled, gamma)
+					Local g:= GetColor(line_view, (channel_position + 1), scale_colors, gamma_enabled, gamma)
+					Local b:= GetColor(line_view, (channel_position + 2), scale_colors, gamma_enabled, gamma)
+					Local a:= GetColor(line_view, (channel_position + 3), scale_colors, False, gamma)
 					
 					'Print("Pixel: " + r + ", " + g + ", " + b + ", " + a)
 					'DebugStop()
@@ -177,6 +245,10 @@ Class PNGDecodeState Implements PNGEntity Final
 		
 		Method PatchPalette:Bool(data:Int[])
 			Return PatchPalette(data, data.Length)
+		End
+		
+		Method ApplyGammaToPalette:Void(image_type:Int)
+			ApplyGammaToPalette(Self.palette_data, Self.gamma, image_type)
 		End
 		
 		' Decoding routines:
@@ -370,7 +442,7 @@ Class PNGDecodeState Implements PNGEntity Final
 			Local channel_position:= 0
 			
 			For Local x:= 0 Until line_width
-				TransferPixel(image_buffer, line_view, image_position, channel_position, color_type, scale_colors, palette_data) ' Self.palette_data
+				TransferPixel(image_buffer, line_view, image_position, channel_position, color_type, scale_colors, palette_data, gamma) ' Self.palette_data ' Self.gamma
 				
 				image_position += pixel_stride
 				channel_position += color_channels
@@ -409,6 +481,10 @@ Class PNGDecodeState Implements PNGEntity Final
 			Return Self.palette_found
 		End
 		
+		Method GammaFound:Bool() Property
+			Return Self.gamma_found
+		End
+		
 		Method EndFound:Bool() Property
 			Return Self.end_found
 		End
@@ -428,6 +504,20 @@ Class PNGDecodeState Implements PNGEntity Final
 			Local name:= Self.ChunkName
 			
 			Return EncodeInt(name[0], name[1], name[2], name[3])
+		End
+		
+		Method Gamma:Float() Property
+			Return Self.gamma
+		End
+		
+		Method Gamma:Void(input:Float, __custom:Bool=True) Property
+			#If Not REGAL_PNG_DISABLE_GAMMA_CORRECTION
+				Self.gamma = input
+				Self.gamma_found = True
+				Self.custom_gamma = __custom ' True
+			#Else
+				' Throw ...
+			#End
 		End
 		
 		' This represents the current palette data.
@@ -453,8 +543,8 @@ Class PNGDecodeState Implements PNGEntity Final
 			#End
 			
 			Self.palette_data = data
-			Self.palette_found = (data.Length > 0) ' (Self.palette_data.Length > 0)
-			Self.custom_palette = __custom
+			Self.palette_found = True ' (data.Length > 0) ' (Self.palette_data.Length > 0)
+			Self.custom_palette = __custom ' True
 			
 			Return True
 		End
@@ -490,11 +580,16 @@ Class PNGDecodeState Implements PNGEntity Final
 		Field image_data_found:Bool
 		Field image_data_complete:Bool
 		Field palette_found:Bool
+		Field gamma_found:Bool
 		Field end_found:Bool
 		
 		Field custom_palette:Bool
+		Field custom_gamma:Bool
 		
 		' Image-data:
+		
+		' The gamma value used when converting color-data.
+		Field gamma:Float = 1.0
 		
 		' An array of integers representing RGB(A) colors loaded from
 		' a required PLTE chunk when using 'COLOR_TYPE_INDEXED'.
