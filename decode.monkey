@@ -213,8 +213,8 @@ Class PNGDecodeState Implements PNGEntity Final
 			Endif
 			
 			' Load the filter-type from the line-stream.
-			Self.filter_type = line_stream.ReadByte() & $FF
-			'Self.filter_type = line_buffer.PeekByte(line_view.Offset) & $FF
+			'Self.filter_type = (line_stream.ReadByte() & $FF)
+			Self.filter_type = (line_buffer.PeekByte(line_view.Offset) & $FF)
 			
 			' Seek back to where we were.
 			line_stream.Seek(start_position)
@@ -258,19 +258,25 @@ Class PNGDecodeState Implements PNGEntity Final
 			Return False
 		End
 		
+		' The first filter-type using filter-method zero.
 		Method FilterLine_Sub:Bool(line_buffer:DataBuffer, line_length:Int, view_offset:Int, pixel_stride:Int)
-			For Local I:= 0 Until line_length
+			Local left_position:= 0
+			
+			For Local I:= pixel_stride Until line_length
 				Local position:= (view_offset + I)
 				
 				Local x:= (line_buffer.PeekByte(position) & $FF) ' Current
-				Local a:= (line_buffer.PeekByte((position - pixel_stride)) & $FF) ' Left
+				Local a:= (line_buffer.PeekByte(view_offset + left_position) & $FF) ' Left
 				
 				line_buffer.PokeByte(position, ((x + a) & $FF))
+				
+				left_position += 1
 			Next
 			
 			Return True
 		End
 		
+		' The second filter-type using filter-method zero.
 		Method FilterLine_Up:Bool(line_buffer:DataBuffer, line_length:Int, view_offset:Int, pixel_stride:Int)
 			For Local I:= 0 Until line_length
 				Local position:= (view_offset + I)
@@ -284,12 +290,23 @@ Class PNGDecodeState Implements PNGEntity Final
 			Return True
 		End
 		
+		' The third filter-type using filter-method zero.
 		Method FilterLine_Average:Bool(line_buffer:DataBuffer, line_length:Int, view_offset:Int, pixel_stride:Int)
 			For Local I:= 0 Until line_length
 				Local position:= (view_offset + I)
 				
 				Local x:= (line_buffer.PeekByte(position) & $FF) ' Current
-				Local a:= (line_buffer.PeekByte((position - pixel_stride)) & $FF) ' Left
+				
+				Local a:Int ' Left
+				
+				Local left_offset:= (I - pixel_stride)
+				
+				If (left_offset < 0) Then
+					a = 0
+				Else
+					a = (line_buffer.PeekByte(left_offset + view_offset) & $FF)
+				Endif
+				
 				Local b:= (line_buffer.PeekByte(I) & $FF) ' Up
 				
 				line_buffer.PokeByte(position, (x + ((a + b) / 2)) & $FF) ' Shr 1
@@ -298,21 +315,27 @@ Class PNGDecodeState Implements PNGEntity Final
 			Return True
 		End
 		
+		' The fourth and final filter-type defined for filter-method zero.
 		Method FilterLine_Paeth:Bool(line_buffer:DataBuffer, line_length:Int, view_offset:Int, pixel_stride:Int)
 			For Local I:= 0 Until line_length
 				Local position:= (view_offset + I)
 				
 				Local x:= (line_buffer.PeekByte(position) & $FF) ' Current
-				Local a:= (line_buffer.PeekByte((position - pixel_stride)) & $FF) ' Left
-				Local b:= (line_buffer.PeekByte(I) & $FF) ' Up
 				
+				Local a:Int
 				Local c:Int
 				
-				If (I > 0) Then
-					c = (line_buffer.PeekByte((I - pixel_stride)) & $FF) ' Top-Left
-				Else
+				Local left_offset:= (I - pixel_stride)
+				
+				If (left_offset < 0) Then
+					a = 0
 					c = 0
+				Else
+					a = (line_buffer.PeekByte(view_offset + left_offset) & $FF) ' Left
+					c = (line_buffer.PeekByte(left_offset) & $FF) ' Top-Left
 				Endif
+				
+				Local b:= (line_buffer.PeekByte(I) & $FF) ' Up
 				
 				Local p:= (a + b - c)
 				

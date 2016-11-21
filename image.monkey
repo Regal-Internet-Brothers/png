@@ -466,6 +466,10 @@ Class PNG Implements PNGEntity
 			Local line_length:= header.LineLength
 			Local line_width:= header.width
 			
+			#If REGAL_PNG_REPORT_FILTERS
+				Local __dbg_filter_list:= New IntMap<Int>()
+			#End
+			
 			Repeat
 				' Ensure the inflation-stream outputs at the beginning of the line-buffer.
 				'SeekBegin(line_stream)
@@ -479,12 +483,26 @@ Class PNG Implements PNGEntity
 				
 				Local filter_type:= state.filter_type
 				
+				#If REGAL_PNG_REPORT_FILTERS
+					__dbg_filter_list.Set(filter_type, __dbg_filter_list.Get(filter_type) + 1)
+				#End
+				
 				state.FilterLine(line_view, line_width, line_length, filter_type, header.filter_method)
 				
 				state.TransferLine(image_buffer, line_view, line_width, pixel_stride, header.color_type, scale_colors)
 				
 				state.current_height += 1
 			Until (input.Position >= chunk_end_position)
+			
+			#If REGAL_PNG_REPORT_FILTERS
+				Print("FILTER-TYPE REPORT BY APPEARANCE:")
+				
+				For Local f:= Eachin __dbg_filter_list
+					Print("Filter #" + f.Key + " appeared " + f.Value + " times.")
+				Next
+				
+				'DebugStop()
+			#End
 			
 			If (advanced_errors) Then
 				' The 'INF_OK' response is only valid if the inflate data-stream is continued in another contiguous IDAT chunk.
@@ -509,7 +527,7 @@ Class PNG Implements PNGEntity
 					Print("UNABLE TO LOAD ENTIRE IDAT CHUNK { Response: " + inflate_response + " } | CURRENT: " + input.Position + " | BEGIN: " + initial_input_position + " | END: " + chunk_end_position + " |")
 				#End
 				
-				DebugStop()
+				'DebugStop()
 				
 				Return False
 			Endif
