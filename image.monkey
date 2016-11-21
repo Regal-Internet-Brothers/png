@@ -468,6 +468,8 @@ Class PNG Implements PNGEntity
 			
 			#If REGAL_PNG_REPORT_FILTERS
 				Local __dbg_filter_list:= New IntMap<Int>()
+				
+				Print("~n| BEGINNING FILTER-TYPE LOG |")
 			#End
 			
 			Repeat
@@ -492,16 +494,19 @@ Class PNG Implements PNGEntity
 				state.TransferLine(image_buffer, line_view, line_width, pixel_stride, header.color_type, scale_colors)
 				
 				state.current_height += 1
+				
+				'Print("state.current_height: " + state.current_height)
 			Until (input.Position >= chunk_end_position)
 			
 			#If REGAL_PNG_REPORT_FILTERS
-				Print("FILTER-TYPE REPORT BY APPEARANCE:")
+				Print("FILTER-TYPE REPORT BY APPEARANCE:~n")
 				
 				For Local f:= Eachin __dbg_filter_list
 					Print("Filter #" + f.Key + " appeared " + f.Value + " times.")
 				Next
 				
-				'DebugStop()
+				Print("~nALL RESULTS PERTAIN TO THE CURRENT IDAT CHUNK, WITH FILTER-TYPE METHOD " + header.filter_method)
+				Print("")
 			#End
 			
 			If (advanced_errors) Then
@@ -586,7 +591,7 @@ Class PNG Implements PNGEntity
 					
 					' Debugging related:
 					#If REGAL_PNG_DEBUG_OUTPUT
-						Print("IHDR [ " + header.width + "x" + header.height + " | " + header.depth + "-bit ] { color-type: " + header.color_type + ", compression: " + header.compression_method + ", filter: " + header.filter_method + ", interlace: " + header.interlace_method + " }")
+						Print("IHDR [ " + header.width + "x" + header.height + " | " + header.depth + "-bit ] { color-type: " + ColorTypeToString(header.color_type) + " [" + header.color_type + "], compression: " + header.compression_method + ", filter: " + header.filter_method + ", interlace: " + header.interlace_method + " }")
 					#End
 				Default
 					' State safety:
@@ -701,8 +706,6 @@ Class PNG Implements PNGEntity
 				Return False
 			Endif
 			
-			'DebugStop()
-			
 			' Retrieve the previous known chunk-type.
 			Local prev_chunk_type:= state.ChunkName
 			
@@ -715,8 +718,14 @@ Class PNG Implements PNGEntity
 			' Check if integrity should be preserved:
 			If (integrity_checks) Then
 				' Verify the integrity of this chunk, and if 'fail_on_bad_integrity' is enabled, throw exceptions on mismatches:
-				If (Not VerifyChunkIntegrity(input, chunk_begin, chunk_length, Not fail_on_bad_integrity) And fail_on_bad_integrity) Then
-					Throw New PNGDecodeError(Self, state, "CRC checksum mismatch detected: file-integrity compromised {" + chunk_type + "}")
+				If (Not VerifyChunkIntegrity(input, chunk_begin, chunk_length, Not fail_on_bad_integrity)) Then
+					If (fail_on_bad_integrity) Then
+						Throw New PNGDecodeError(Self, state, "CRC checksum mismatch detected: file-integrity compromised {" + chunk_type + "}")
+					Else
+						#If REGAL_PNG_DEBUG_OUTPUT
+							Print("PNG: CRC checksum mismatch detected: file-integrity compromised {" + chunk_type + "}")
+						#End
+					Endif
 				Endif
 			Endif
 			

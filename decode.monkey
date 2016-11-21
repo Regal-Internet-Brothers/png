@@ -73,6 +73,9 @@ Class PNGDecodeState Implements PNGEntity Final
 					Local b:= GetColor(line_view, (channel_position + 2), scale_colors)
 					Local a:= GetColor(line_view, (channel_position + 3), scale_colors)
 					
+					'Print("Pixel: " + r + ", " + g + ", " + b + ", " + a)
+					'DebugStop()
+					
 					image_buffer.PokeInt(image_position, EncodeColor(r, g, b, a))
 				Default
 					' The color-type specified is unsupported.
