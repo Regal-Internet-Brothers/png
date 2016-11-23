@@ -33,12 +33,20 @@ Class PNGDecodeState Implements PNGEntity Final
 		' This retrieves a color from 'line_view' at 'channel' and optionally scales it to 'scale_max'.
 		' If 'REGAL_PNG_DISABLE_GAMMA_CORRECTION' is defined, the 'gamma' argument does nothing.
 		Function GetColor:Int(line_view:ImageView, channel:Int, scaled:Bool, gamma_enabled:Bool, gamma:Float, scale_max:Int=$FF) ' scale_max:Float
+			Local _value:= line_view.Get(channel)
+			
+			'Print(_value)
+			
+			If (_value > 255) Then
+				'DebugStop()
+			EndIf
+			
 			Local value:= line_view.Get(channel)
 			
 			If (scaled And value > 0) Then
 				Local view_max:= line_view.BitMask
 				
-				If (gamma_enabled) Then
+				If (Not gamma_enabled) Then
 					Return ScaleColor(value, view_max, scale_max)
 				Else
 					Return Int(ScaleColorWithGamma(value, view_max, scale_max, gamma))
@@ -264,8 +272,6 @@ Class PNGDecodeState Implements PNGEntity Final
 			
 			Local start_position:= line_stream.Position
 			
-			'DebugStop()
-			
 			' Not the most efficient approach, but it works:
 			If (start_position = line_stream.Length) Then
 				' Make a copy of the second line and place it at the beginning of the buffer.
@@ -335,13 +341,13 @@ Class PNGDecodeState Implements PNGEntity Final
 		
 		' The first filter-type using filter-method zero.
 		Method FilterLine_Sub:Bool(line_buffer:DataBuffer, line_length:Int, view_offset:Int, pixel_stride:Int)
-			Local left_position:= 0
+			Local left_position:= view_offset
 			
 			For Local I:= pixel_stride Until line_length
 				Local position:= (view_offset + I)
 				
 				Local x:= (line_buffer.PeekByte(position) & $FF) ' Current
-				Local a:= (line_buffer.PeekByte(view_offset + left_position) & $FF) ' Left
+				Local a:= (line_buffer.PeekByte(left_position) & $FF) ' Left
 				
 				line_buffer.PokeByte(position, ((x + a) & $FF))
 				

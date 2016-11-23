@@ -90,7 +90,7 @@ Class PNGDecodeError Extends PNGInputException
 			
 			#If REGAL_PNG_DEBUG
 				#If REGAL_PNG_DEBUG_STATES
-					output += " { " + state.ChunkName + "[" + state.ChunkLength + "] }"
+					output += " { " + state.ChunkName + " [" + state.ChunkLength + "] }"
 				#End
 				
 				#If REGAL_PNG_DEBUG_STREAMS

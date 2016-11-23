@@ -125,11 +125,19 @@ Class ImageView
 				value_size = depth_in_bytes
 			Endif
 			
-			Local current_value:= GetRaw(address, value_size)
+			Local out_value:Int
 			
-			Local out_value:= Lsl((value & BitMask), (channel * channel_stride))
+			Local is_encapsulated:= ((channels = 1) And (value_size = depth_in_bytes))
 			
-			SetRaw(address, value_size, (current_value | out_value))
+			If (Not is_encapsulated) Then
+				Local current_value:= GetRaw(address, value_size)
+				
+				out_value = (Lsl((value & BitMask), (channel * channel_stride)) | current_value)
+			Else
+				out_value = value
+			Endif
+			
+			SetRaw(address, value_size, out_value)
 		End
 		
 		' This reads a raw value of size 'value_size' bytes from 'address'.
