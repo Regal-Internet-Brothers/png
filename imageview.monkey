@@ -154,18 +154,15 @@ Class ImageView
 				Case 1
 					Return data.PeekByte(offset_address)
 				Case 2
-					Return data.PeekShort(offset_address)
+					Return NToHS(data.PeekShort(offset_address))
 				Case 3
-					Local value:Int
+					Local a:= (data.PeekByte(offset_address) & $FF)
+					Local b:= (data.PeekByte((offset_address + 1)) & $FF)
+					Local c:= (data.PeekByte((offset_address + 2)) & $FF)
 					
-					' Read 3 bytes into a 32-bit integer:
-					value = (data.PeekByte(offset_address + SizeOf_Short) & $FF)
-					value Shl= 16
-					value |= (data.PeekShort(offset_address) & $FFFF)
-					
-					Return value
+					Return (c | (b Shl 8) | (a Shl 16))
 				Case 4
-					Return data.PeekInt(offset_address)
+					Return NToHL(data.PeekInt(offset_address))
 			End Select
 			
 			Return 0
@@ -185,15 +182,17 @@ Class ImageView
 				Case 1
 					data.PokeByte(offset_address, value)
 				Case 2
-					data.PokeShort(offset_address, value)
+					data.PokeShort(offset_address, HToNS(value))
 				Case 3
-					Local a:= (value & $FFFF)
-					Local b:= ((value Shr 16) & $FF)
+					Local a:= ((value Shr 16) & $FF)
+					Local b:= ((value Shr 8) & $FF)
+					Local c:= (value & $FF)
 					
-					data.PokeShort(offset_address, a)
-					data.PokeByte((offset_address + SizeOf_Short), b)
+					data.PokeByte(offset_address, a)
+					data.PokeByte((offset_address + 1), b)
+					data.PokeByte((offset_address + 2), c)
 				Case 4
-					data.PokeInt(offset_address, value)
+					data.PokeInt(offset_address, HToNL(value))
 			End Select
 		End
 		
