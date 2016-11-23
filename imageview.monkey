@@ -45,7 +45,7 @@ Class ImageView
 		End
 		
 		' Methods:
-		Method Get:Int(index:Int)
+		Method Get:Int(index:Int, big_endian:Bool=False)
 			Local address:= IndexToAddress(index)
 			Local channel:= IndexToChannel(index)
 			
@@ -69,12 +69,10 @@ Class ImageView
 				value_size = depth_in_bytes
 			Endif
 			
-			Local raw:= GetRaw(address, value_size)
+			Local raw:= GetRaw(address, value_size, big_endian)
 			
 			If (BitsPerChannel = 1) Then
 				raw = ReverseByte(raw)
-				
-				'DebugStop()
 				
 				Return (raw Shr channel) & 1
 			Endif
@@ -82,28 +80,10 @@ Class ImageView
 			Local bmsk:= BitMask
 			Local out:= (raw Shr (channel * channel_stride)) & bmsk
 			
-			#Rem
-			Local toggle:= False
-			
-			If (toggle And out <> 1) Then
-				Local a:= data.PeekByte(0) & $FF
-				Local b:= data.PeekByte(1) & $FF
-				Local c:= data.PeekByte(2) & $FF
-				Local d:= data.PeekByte(3) & $FF
-				
-				Print("---")
-				Print(Bin(_raw))
-				Print(Bin(raw))
-				Print("___")
-				
-				DebugStop()
-			Endif
-			#End
-			
 			Return out
 		End
 		
-		Method Set:Void(index:Int, value:Int)
+		Method Set:Void(index:Int, value:Int, big_endian:Bool=False)
 			Local address:= IndexToAddress(index)
 			Local channel:= IndexToChannel(index)
 			
@@ -130,19 +110,19 @@ Class ImageView
 			Local is_encapsulated:= ((channels = 1) And (value_size = depth_in_bytes))
 			
 			If (Not is_encapsulated) Then
-				Local current_value:= GetRaw(address, value_size)
+				Local current_value:= GetRaw(address, value_size, big_endian)
 				
 				out_value = (Lsl((value & BitMask), (channel * channel_stride)) | current_value)
 			Else
 				out_value = value
 			Endif
 			
-			SetRaw(address, value_size, out_value)
+			SetRaw(address, value_size, out_value, big_endian)
 		End
 		
 		' This reads a raw value of size 'value_size' bytes from 'address'.
 		' This is used internally to handle memory-mapping.
-		Method GetRaw:Int(address:Int, value_size:Int)
+		Method GetRaw:Int(address:Int, value_size:Int, big_endian:Bool=False)
 			Local offset_address:= (address + offset)
 			
 			' Make sure this address is valid, and if not, return zero:
@@ -154,15 +134,38 @@ Class ImageView
 				Case 1
 					Return data.PeekByte(offset_address)
 				Case 2
-					Return NToHS(data.PeekShort(offset_address))
-				Case 3
-					Local a:= (data.PeekByte(offset_address) & $FF)
-					Local b:= (data.PeekByte((offset_address + 1)) & $FF)
-					Local c:= (data.PeekByte((offset_address + 2)) & $FF)
+					Local value:= data.PeekShort(offset_address)
 					
-					Return (c | (b Shl 8) | (a Shl 16))
+					If (big_endian) Then
+						Return NToHS(value)
+					Endif
+					
+					Return value
+				Case 3
+					If (big_endian) Then
+						Local a:= (data.PeekByte(offset_address) & $FF)
+						Local b:= (data.PeekByte((offset_address + 1)) & $FF)
+						Local c:= (data.PeekByte((offset_address + 2)) & $FF)
+						
+						Return (c | (b Shl 8) | (a Shl 16))
+					Else
+						Local value:Int
+						
+						' Read 3 bytes into a 32-bit integer:
+						value = (data.PeekByte(offset_address + SizeOf_Short) & $FF)
+						value Shl= 16
+						value |= (data.PeekShort(offset_address) & $FFFF)
+						
+						Return value
+					Endif
 				Case 4
-					Return NToHL(data.PeekInt(offset_address))
+					Local value:= data.PeekInt(offset_address)
+					
+					If (big_endian) Then
+						Return NToHL(value)
+					Endif
+					
+					Return value
 			End Select
 			
 			Return 0
@@ -170,7 +173,7 @@ Class ImageView
 		
 		' This writes a raw value of size 'value_size' bytes to 'address'.
 		' This is used internally to handle memory-mapping.
-		Method SetRaw:Void(address:Int, value_size:Int, value:Int)
+		Method SetRaw:Void(address:Int, value_size:Int, value:Int, big_endian:Bool=False)
 			Local offset_address:= (address + offset)
 			
 			' Make sure this address is valid:
@@ -182,32 +185,48 @@ Class ImageView
 				Case 1
 					data.PokeByte(offset_address, value)
 				Case 2
-					data.PokeShort(offset_address, HToNS(value))
-				Case 3
-					Local a:= ((value Shr 16) & $FF)
-					Local b:= ((value Shr 8) & $FF)
-					Local c:= (value & $FF)
+					If (big_endian) Then
+						value = HToNS(value)
+					Endif
 					
-					data.PokeByte(offset_address, a)
-					data.PokeByte((offset_address + 1), b)
-					data.PokeByte((offset_address + 2), c)
+					data.PokeShort(offset_address, value)
+				Case 3
+					If (big_endian) Then
+						Local a:= ((value Shr 16) & $FF)
+						Local b:= ((value Shr 8) & $FF)
+						Local c:= (value & $FF)
+						
+						data.PokeByte(offset_address, a)
+						data.PokeByte((offset_address + 1), b)
+						data.PokeByte((offset_address + 2), c)
+					Else
+						Local a:= (value & $FFFF)
+						Local b:= ((value Shr 16) & $FF)
+						
+						data.PokeShort(offset_address, a)
+						data.PokeByte((offset_address + SizeOf_Short), b)
+					Endif
 				Case 4
-					data.PokeInt(offset_address, HToNL(value))
+					If (big_endian) Then
+						value = HToNL(value)
+					Endif
+					
+					data.PokeInt(offset_address, value)
 			End Select
 		End
 		
 		' This retrieves the raw value of the color entry specified.
 		' For details, see 'Poke'.
-		Method Peek:Int(entry_index:Int) Final
-			Return GetRaw(IndexToAddress(entry_index), DepthInBytes)
+		Method Peek:Int(entry_index:Int, big_endian:Bool=False) Final
+			Return GetRaw(IndexToAddress(entry_index), DepthInBytes, big_endian)
 		End
 		
 		' This manually assigns a raw value to a color entry.
 		' Color entries are 'DepthInBytes' sized collections of color channels,
 		' which therefore affect multiple channels when modified.
 		' To manage individual channels by their exact indices, use 'Set' and 'Get'.
-		Method Poke:Void(entry_index:Int, value:Int) Final
-			SetRaw(IndexToAddress(entry_index), DepthInBytes, value)
+		Method Poke:Void(entry_index:Int, value:Int, big_endian:Bool=False) Final
+			SetRaw(IndexToAddress(entry_index), DepthInBytes, value, big_endian)
 		End
 		
 		' This converts an index to an aligned memory address.

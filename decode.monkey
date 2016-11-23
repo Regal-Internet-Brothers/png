@@ -32,16 +32,16 @@ Class PNGDecodeState Implements PNGEntity Final
 		
 		' This retrieves a color from 'line_view' at 'channel' and optionally scales it to 'scale_max'.
 		' If 'REGAL_PNG_DISABLE_GAMMA_CORRECTION' is defined, the 'gamma' argument does nothing.
-		Function GetColor:Int(line_view:ImageView, channel:Int, scaled:Bool, gamma_enabled:Bool, gamma:Float, scale_max:Int=$FF) ' scale_max:Float
+		Function GetColor:Int(line_view:ImageView, channel:Int, big_endian:Bool, scaled:Bool, gamma_enabled:Bool, gamma:Float, scale_max:Int=$FF) ' scale_max:Float
 			Local _value:= line_view.Get(channel)
 			
 			'Print(_value)
 			
 			If (_value > 255) Then
 				'DebugStop()
-			EndIf
+			Endif
 			
-			Local value:= line_view.Get(channel)
+			Local value:= line_view.Get(channel, big_endian)
 			
 			If (scaled And value > 0) Then
 				Local view_max:= line_view.BitMask
@@ -121,15 +121,15 @@ Class PNGDecodeState Implements PNGEntity Final
 			
 			Select (color_type)
 				Case PNG_COLOR_TYPE_GRAYSCALE
-					Local gray:= GetColor(line_view, channel_position, scale_colors, gamma_enabled, gamma)
+					Local gray:= GetColor(line_view, channel_position, True, scale_colors, gamma_enabled, gamma)
 					
 					'DebugStop()
 					
 					image_buffer.PokeInt(image_position, EncodeColor(gray, gray, gray))
 				Case PNG_COLOR_TYPE_TRUECOLOR
-					Local r:= GetColor(line_view, channel_position, scale_colors, gamma_enabled, gamma)
-					Local g:= GetColor(line_view, (channel_position + 1), scale_colors, gamma_enabled, gamma)
-					Local b:= GetColor(line_view, (channel_position + 2), scale_colors, gamma_enabled, gamma)
+					Local r:= GetColor(line_view, channel_position, False, scale_colors, gamma_enabled, gamma)
+					Local g:= GetColor(line_view, (channel_position + 1), False, scale_colors, gamma_enabled, gamma)
+					Local b:= GetColor(line_view, (channel_position + 2), False, scale_colors, gamma_enabled, gamma)
 					
 					image_buffer.PokeInt(image_position, EncodeColor(r, g, b))
 				Case PNG_COLOR_TYPE_INDEXED
@@ -137,17 +137,15 @@ Class PNGDecodeState Implements PNGEntity Final
 					
 					image_buffer.PokeInt(image_position, palette_data[color_index])
 				Case PNG_COLOR_TYPE_GRAYSCALE_ALPHA
-					Local gray:= GetColor(line_view, channel_position, scale_colors, gamma_enabled, gamma)
-					Local alpha:= GetColor(line_view, (channel_position + 1), scale_colors, False, gamma)
-					
-					'DebugStop()
+					Local gray:= GetColor(line_view, channel_position, True, scale_colors, gamma_enabled, gamma)
+					Local alpha:= GetColor(line_view, (channel_position + 1), True, scale_colors, False, gamma)
 					
 					image_buffer.PokeInt(image_position, EncodeColor(gray, gray, gray, alpha))
 				Case PNG_COLOR_TYPE_TRUECOLOR_ALPHA
-					Local r:= GetColor(line_view, channel_position, scale_colors, gamma_enabled, gamma)
-					Local g:= GetColor(line_view, (channel_position + 1), scale_colors, gamma_enabled, gamma)
-					Local b:= GetColor(line_view, (channel_position + 2), scale_colors, gamma_enabled, gamma)
-					Local a:= GetColor(line_view, (channel_position + 3), scale_colors, False, gamma)
+					Local r:= GetColor(line_view, channel_position, False, scale_colors, gamma_enabled, gamma)
+					Local g:= GetColor(line_view, (channel_position + 1), False, scale_colors, gamma_enabled, gamma)
+					Local b:= GetColor(line_view, (channel_position + 2), False, scale_colors, gamma_enabled, gamma)
+					Local a:= GetColor(line_view, (channel_position + 3), False, scale_colors, False, gamma)
 					
 					'Print("Pixel: " + r + ", " + g + ", " + b + ", " + a)
 					'DebugStop()
