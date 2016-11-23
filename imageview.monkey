@@ -49,8 +49,6 @@ Class ImageView
 			Local address:= IndexToAddress(index)
 			Local channel:= IndexToChannel(index)
 			
-			'DebugStop()
-			
 			Local depth_in_bytes:= DepthInBytes
 			Local bytes_per_channel:= BytesPerChannel
 			Local channel_stride:= BitsPerChannel ' bytes_per_channel * 8
@@ -72,15 +70,10 @@ Class ImageView
 			Local raw:= GetRaw(address, value_size, big_endian)
 			
 			If (BitsPerChannel = 1) Then
-				raw = ReverseByte(raw)
-				
-				Return (raw Shr channel) & 1
+				Return (ReverseByte(raw) Shr channel) & 1
 			Endif
 			
-			Local bmsk:= BitMask
-			Local out:= (raw Shr (channel * channel_stride)) & bmsk
-			
-			Return out
+			Return (raw Shr (channel * channel_stride)) & BitMask
 		End
 		
 		Method Set:Void(index:Int, value:Int, big_endian:Bool=False)

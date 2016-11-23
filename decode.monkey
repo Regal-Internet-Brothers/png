@@ -33,14 +33,6 @@ Class PNGDecodeState Implements PNGEntity Final
 		' This retrieves a color from 'line_view' at 'channel' and optionally scales it to 'scale_max'.
 		' If 'REGAL_PNG_DISABLE_GAMMA_CORRECTION' is defined, the 'gamma' argument does nothing.
 		Function GetColor:Int(line_view:ImageView, channel:Int, big_endian:Bool, scaled:Bool, gamma_enabled:Bool, gamma:Float, scale_max:Int=$FF) ' scale_max:Float
-			Local _value:= line_view.Get(channel)
-			
-			'Print(_value)
-			
-			If (_value > 255) Then
-				'DebugStop()
-			Endif
-			
 			Local value:= line_view.Get(channel, big_endian)
 			
 			If (scaled And value > 0) Then
@@ -123,8 +115,6 @@ Class PNGDecodeState Implements PNGEntity Final
 				Case PNG_COLOR_TYPE_GRAYSCALE
 					Local gray:= GetColor(line_view, channel_position, True, scale_colors, gamma_enabled, gamma)
 					
-					'DebugStop()
-					
 					image_buffer.PokeInt(image_position, EncodeColor(gray, gray, gray))
 				Case PNG_COLOR_TYPE_TRUECOLOR
 					Local r:= GetColor(line_view, channel_position, False, scale_colors, gamma_enabled, gamma)
@@ -146,9 +136,6 @@ Class PNGDecodeState Implements PNGEntity Final
 					Local g:= GetColor(line_view, (channel_position + 1), False, scale_colors, gamma_enabled, gamma)
 					Local b:= GetColor(line_view, (channel_position + 2), False, scale_colors, gamma_enabled, gamma)
 					Local a:= GetColor(line_view, (channel_position + 3), False, scale_colors, False, gamma)
-					
-					'Print("Pixel: " + r + ", " + g + ", " + b + ", " + a)
-					'DebugStop()
 					
 					image_buffer.PokeInt(image_position, EncodeColor(r, g, b, a))
 				Default
