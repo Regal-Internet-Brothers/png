@@ -127,7 +127,7 @@ Class PNGDecodeState Implements PNGEntity Final
 					
 					image_buffer.PokeInt(image_position, palette_data[color_index])
 				Case PNG_COLOR_TYPE_GRAYSCALE_ALPHA
-					Local gray:= GetColor(line_view, channel_position, True, scale_colors, gamma_enabled, gamma)
+					Local gray:= GetColor(line_view, (channel_position), True, scale_colors, gamma_enabled, gamma)
 					Local alpha:= GetColor(line_view, (channel_position + 1), True, scale_colors, False, gamma)
 					
 					image_buffer.PokeInt(image_position, EncodeColor(gray, gray, gray, alpha))

@@ -2,6 +2,9 @@ Strict
 
 Public
 
+' Preprocessor related:
+#REGAL_PNG_IMAGEVIEW_CACHE_VALUES = True
+
 ' Imports (Public):
 Import config
 
@@ -18,7 +21,7 @@ Public
 
 ' This maps a 'DataBuffer' to bit-length color entries based on the available channels and color-depth.
 ' Regular indices wrap to the next color entry; for example, 24-bit RGB at index 3 will begin at the second color entry.
-Class ImageView
+Class ImageView Final
 	Public
 		' Constructor(s):
 		
@@ -42,8 +45,12 @@ Class ImageView
 			Self.channels = channels
 			Self.depth = depth
 			Self.offset = offset
+			
+			#If REGAL_PNG_IMAGEVIEW_CACHE_VALUES
+				BuildMetaCache()
+			#End
 		End
-		
+	Public
 		' Methods:
 		Method Get:Int(index:Int, big_endian:Bool=False)
 			Local address:= IndexToAddress(index)
@@ -66,6 +73,10 @@ Class ImageView
 			Else
 				value_size = depth_in_bytes
 			Endif
+			
+			'If (bytes_per_channel = 1) Then
+				'big_endian = False
+			'Endif
 			
 			Local raw:= GetRaw(address, value_size, big_endian)
 			
@@ -100,12 +111,15 @@ Class ImageView
 			
 			Local out_value:Int
 			
-			Local is_encapsulated:= ((channels = 1) And (value_size = depth_in_bytes))
+			Local is_encapsulated:= ((channels = 1) And (value_size = depth_in_bytes) And channel_stride >= 8)
 			
 			If (Not is_encapsulated) Then
 				Local current_value:= GetRaw(address, value_size, big_endian)
 				
-				out_value = (Lsl((value & BitMask), (channel * channel_stride)) | current_value)
+				Local masked_value:= (value & BitMask)
+				Local shift_amount:= (channel * channel_stride)
+				
+				out_value = (Lsl(masked_value, shift_amount) | current_value)
 			Else
 				out_value = value
 			Endif
@@ -306,22 +320,64 @@ Class ImageView
 		' This specifies the minimum number of bytes required to store 'Depth'.
 		' In other words, this specifies how many bytes are required to store a pixel.
 		Method DepthInBytes:Int() Property
-			Return BitDepthInBytes(Depth)
+			#If REGAL_PNG_IMAGEVIEW_CACHE_VALUES
+				Return Self.depth_in_bytes
+			#Else
+				Return _DepthInBytes
+			#End
 		End
 		
 		' This specifies how many bits are available in each color channel.
 		Method BitsPerChannel:Int() Property
-			Return (Self.depth / Self.channels)
+			#If REGAL_PNG_IMAGEVIEW_CACHE_VALUES
+				Return Self.bits_per_channel
+			#Else
+				Return _BitsPerChannel
+			#End
 		End
 		
 		' This specifies the minimum number of bytes required to store a color channel.
 		Method BytesPerChannel:Int() Property
-			Return BitDepthInBytes(BitsPerChannel)
+			#If REGAL_PNG_IMAGEVIEW_CACHE_VALUES
+				Return Self.bytes_per_channel
+			#Else
+				Return _BytesPerChannel
+			#End
 		End
 		
 		' This provides the bit-mask used to restrict color channels' values for I/O.
 		Method BitMask:Int() Property
-			Local bits_per_channel:= BitsPerChannel
+			#If REGAL_PNG_IMAGEVIEW_CACHE_VALUES
+				Return Self.bit_mask
+			#Else
+				Return _BitMask
+			#End
+		End
+	Private
+		' Constructor(s):
+		#If REGAL_PNG_IMAGEVIEW_CACHE_VALUES
+			Method BuildMetaCache:Void()
+				Self.depth_in_bytes = _DepthInBytes
+				Self.bits_per_channel = _BitsPerChannel
+				Self.bytes_per_channel = _BytesPerChannel
+				Self.bit_mask = _BitMask
+			End
+		#End
+		
+		Method _DepthInBytes:Int() Property
+			Return BitDepthInBytes(Self.depth)
+		End
+		
+		Method _BitsPerChannel:Int() Property
+			Return (Self.depth / Self.channels)
+		End
+		
+		Method _BytesPerChannel:Int() Property
+			Return BitDepthInBytes(BitsPerChannel) ' _BitsPerChannel
+		End
+		
+		Method _BitMask:Int() Property
+			Local bits_per_channel:= BitsPerChannel ' _BitsPerChannel
 			
 			If (bits_per_channel >= 32) Then
 				Return $FFFFFFFF
@@ -336,4 +392,12 @@ Class ImageView
 		Field channels:Int
 		Field depth:Int
 		Field offset:Int
+		
+		' Meta-cache:
+		#If REGAL_PNG_IMAGEVIEW_CACHE_VALUES
+			Field depth_in_bytes:Int
+			Field bits_per_channel:Int
+			Field bytes_per_channel:Int
+			Field bit_mask:Int
+		#End
 End
