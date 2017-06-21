@@ -81,7 +81,7 @@ Class ImageView Final
 			Local raw:= GetRaw(address, value_size, big_endian)
 			
 			If (BitsPerChannel = 1) Then
-				Return (ReverseByte(raw) Shr channel) & 1
+				Return ((raw Shr channel) & $1) ' ((ReverseByte(raw) Shr channel) & 1)
 			Endif
 			
 			Return (raw Shr (channel * channel_stride)) & BitMask
