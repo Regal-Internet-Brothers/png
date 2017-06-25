@@ -295,6 +295,11 @@ Class ImageView Final
 			Return Self.data
 		End
 		
+		' This specifies how many entries are representable by this view.
+		Method Length:Int() Property
+			Return (((Data.Length - Offset) * SizeOf_Byte_InBits) / Depth)
+		End
+		
 		' This specifies how many color channels are mapped in this view.
 		Method Channels:Int() Property
 			Return Self.channels
